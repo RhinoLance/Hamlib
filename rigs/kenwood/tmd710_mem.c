@@ -7,10 +7,16 @@
  *  - https://github.com/LA3QMA/TM-V71_TM-D710-Kenwood
  *  - http://kd7dvd.us/equipment/tm-d710a/manuals/control_commands.pdf
  *
- *  Limitations:
- *  - It is possible to set frequency only inside the selected frequency band of the current VFO,
- *    since there is no command to change the frequency band of a VFO
- *
+ *  Features
+ *  -In VFO mode, the radio can only set the frequency within the selected 
+ *     frequency band of the current VFO.
+ *  -This rig differs from the main tmd710.c in that it manipulates channel 
+ *    memory slots rather than the settings in VFO mode, providing a far more
+ *    complete implementation, but doing it in a different mode.
+ *  -Channel memory slots 998 and 999 are used for VOFA (left side of radio) 
+ *    and VFOB (right side of radio) respectively.
+ 
+
  *  Features not yet implemented:
  *  - DTMF send
  *  - Tone burst frequency setting
@@ -636,6 +642,12 @@ typedef struct {
   int display_partition_bar; // P42 0/1
 } tmd710_mu;
 
+/*
+All operations will be using memory channels, so perform the following init:
+
+- Create (if required) the memory channels
+- Put the both sides of the radio in memory mode and set channels.
+*/
 static int tmd710_open(RIG *rig) {
 	
 	rig_debug(RIG_DEBUG_TRACE, "%s: called\n", __func__);
@@ -643,7 +655,7 @@ static int tmd710_open(RIG *rig) {
 	rig->state.tx_vfo = RIG_VFO_A;
 	rig_debug(RIG_DEBUG_TRACE, "RIG_VFO_A: %d\trig->state.tx_vfo: %d\n", RIG_VFO_A, rig->state.tx_vfo);
 
-
+  
 	return 0;
 }
 

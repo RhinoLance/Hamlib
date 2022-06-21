@@ -2,22 +2,11 @@
  *  Hamlib Kenwood backend - TM-D710(G) description
  *  Copyright (c) 2011 by Charles Suprin
  *  Copyright (c) 2018 Mikael Nousiainen
- *  Copyright (c) 2022 Lance Conry
  *
  *  Command set specification available in:
  *  - https://github.com/LA3QMA/TM-V71_TM-D710-Kenwood
  *  - http://kd7dvd.us/equipment/tm-d710a/manuals/control_commands.pdf
  *
- *  Features
- *  -In VFO mode, the radio can only set the frequency within the selected 
- *     frequency band of the current VFO.
- *  -This rig differs from the main tmd710.c in that it manipulates channel 
- *    memory slots rather than the settings in VFO mode, providing a far more
- *    complete implementation, but doing it in a different mode.
- *  -Channel memory slots 998 and 999 are used for VOFA (left side of radio) 
- *    and VFOB (right side of radio) respectively.
- 
-
  *  Limitations:
  *  - It is possible to set frequency only inside the selected frequency band of the current VFO,
  *    since there is no command to change the frequency band of a VFO
@@ -60,10 +49,17 @@
 #include "num_stdio.h"
 #include "misc.h"
 
+static int tmd710_open(RIG *rig);
+static int tmd710_do_get_freq(RIG *rig, vfo_t vfo, freq_t *freq);
+static int tmd710_do_set_freq(RIG *rig, vfo_t vfo, freq_t freq);
 static int tmd710_get_freq(RIG *rig, vfo_t vfo, freq_t *freq);
 static int tmd710_set_freq(RIG *rig, vfo_t vfo, freq_t freq);
+static int tmd710_get_split_freq(RIG *rig, vfo_t vfo, freq_t *freq);
+static int tmd710_set_split_freq(RIG *rig, vfo_t vfo, freq_t freq);
 static int tmd710_set_vfo (RIG *rig, vfo_t vfo);
 static int tmd710_get_vfo(RIG *rig, vfo_t *vfo);
+static int tmd710_set_split_vfo (RIG *rig, vfo_t vfo, split_t split, vfo_t txvfo);
+static int tmd710_get_split_vfo (RIG *rig, vfo_t vfo, split_t *split, vfo_t *txvfo);
 static int tmd710_set_ts(RIG *rig, vfo_t vfo, shortfreq_t ts);
 static int tmd710_get_ts(RIG *rig, vfo_t vfo, shortfreq_t *ts);
 static int tmd710_set_ctcss_tone(RIG *rig, vfo_t vfo, tone_t tone);
@@ -80,8 +76,8 @@ static int tmd710_get_mem(RIG *rig, vfo_t vfo, int *ch);
 static int tmd710_set_mem(RIG *rig, vfo_t vfo, int ch);
 static int tmd710_set_dcs_sql(RIG * rig, vfo_t vfo, tone_t code);
 static int tmd710_get_dcs_sql(RIG * rig, vfo_t vfo, tone_t *code);
-static int tmd710_set_channel(RIG *rig, const channel_t *chan);
-static int tmd710_get_channel(RIG *rig, channel_t *chan);
+static int tmd710_set_channel(RIG *rig, vfo_t vfo, const channel_t *chan);
+static int tmd710_get_channel(RIG *rig, vfo_t vfo, channel_t *chan, int read_only);
 static int tmd710_set_ptt(RIG *rig, vfo_t vfo, ptt_t ptt);
 static int tmd710_get_dcd(RIG *rig, vfo_t vfo, dcd_t *dcd);
 static int tmd710_vfo_op(RIG *rig, vfo_t vfo, vfo_op_t op);
@@ -93,7 +89,6 @@ static int tmd710_get_parm(RIG *rig, setting_t parm, value_t *val);
 static int tmd710_set_parm(RIG *rig, setting_t parm, value_t val);
 static int tmd710_get_ext_level(RIG *rig, vfo_t vfo, token_t token, value_t *val);
 static int tmd710_set_ext_level(RIG *rig, vfo_t vfo, token_t token, value_t val);
-
 
 #define TMD710_MODES     (RIG_MODE_FM|RIG_MODE_FMN|RIG_MODE_AM)
 #define TMD710_MODES_FM  (RIG_MODE_FM|RIG_MODE_FMN)
@@ -140,9 +135,6 @@ static int tmd710_set_ext_level(RIG *rig, vfo_t vfo, token_t token, value_t val)
 #define TOK_LEVEL_EXT_DATA_BAND TOKEN_BACKEND(100)
 
 // TM-D710 protocol definitions
-
-#define TMD710_MEMA 998;
-#define TMD710_MEMB 999;
 
 #define TMD710_BAND_A 0
 #define TMD710_BAND_B 1
@@ -256,9 +248,9 @@ const struct rig_caps tmd710_caps = {
     .rig_model =  RIG_MODEL_TMD710,
     .model_name = "TM-D710(G)",
     .mfg_name =  "Kenwood",
-    .version =  BACKEND_VER ".1",
+    .version =  BACKEND_VER ".2",
     .copyright =  "LGPL",
-    .status =  RIG_STATUS_BETA,
+    .status =  RIG_STATUS_STABLE,
     .rig_type =  RIG_TYPE_MOBILE | RIG_FLAG_APRS | RIG_FLAG_TNC,
     .ptt_type =  RIG_PTT_RIG,
     .dcd_type =  RIG_DCD_RIG,
@@ -355,6 +347,163 @@ const struct rig_caps tmd710_caps = {
     .priv =  (void *) &tmd710_priv_caps,
 
     .rig_init = kenwood_init,
+    .rig_open = tmd710_open,
+	.rig_cleanup = kenwood_cleanup,
+    .set_freq =  tmd710_set_freq,
+    .get_freq =  tmd710_get_freq,
+    .set_split_freq =  tmd710_set_split_freq,
+    .get_split_freq =  tmd710_get_split_freq,
+    .set_mode =  tmd710_set_mode,
+    .get_mode =  tmd710_get_mode,
+    .set_vfo =  tmd710_set_vfo,
+    .get_vfo =  tmd710_get_vfo,
+    .set_ts = tmd710_set_ts,
+    .get_ts = tmd710_get_ts,
+    .set_ctcss_tone =  tmd710_set_ctcss_tone,
+    .get_ctcss_tone =  tmd710_get_ctcss_tone,
+    .set_ctcss_sql =  tmd710_set_ctcss_sql,
+    .get_ctcss_sql =  tmd710_get_ctcss_sql,
+    .set_split_vfo =  tmd710_set_split_vfo,
+    .get_split_vfo =  tmd710_get_split_vfo,
+    .set_dcs_sql =  tmd710_set_dcs_sql,
+    .get_dcs_sql =  tmd710_get_dcs_sql,
+    .set_mem =  tmd710_set_mem,
+    .get_mem =  tmd710_get_mem,
+    .set_channel =  tmd710_set_channel,
+    .get_channel =  tmd710_get_channel,
+    //.set_trn =  th_set_trn,
+    //.get_trn =  th_get_trn,
+
+    .set_func =  tmd710_set_func,
+    .get_func =  tmd710_get_func,
+    .set_level =  tmd710_set_level,
+    .get_level =  tmd710_get_level,
+    .set_parm =  tmd710_set_parm,
+    .get_parm =  tmd710_get_parm,
+    //.get_info =  th_get_info,
+    .get_dcd =  tmd710_get_dcd,
+    .set_ptt =  tmd710_set_ptt,
+    .vfo_op =  tmd710_vfo_op,
+    //.scan   =  th_scan,
+    .set_ext_level = tmd710_set_ext_level,
+    .get_ext_level = tmd710_get_ext_level,
+
+    .extlevels = tmd710_ext_levels,
+
+    .set_rptr_shift = tmd710_set_rptr_shift,
+    .get_rptr_shift = tmd710_get_rptr_shift,
+    .set_rptr_offs = tmd710_set_rptr_offs,
+    .get_rptr_offs = tmd710_get_rptr_offs,
+
+    .decode_event =  th_decode_event,
+};
+
+const struct rig_caps tmv71_caps =
+{
+    RIG_MODEL(RIG_MODEL_TMV71),
+    .model_name = "TM-V71(A)",
+    .mfg_name =  "Kenwood",
+    .version =  BACKEND_VER ".0",
+    .copyright =  "LGPL",
+    .status =  RIG_STATUS_STABLE,
+    .rig_type =  RIG_TYPE_MOBILE | RIG_FLAG_APRS | RIG_FLAG_TNC,
+    .ptt_type =  RIG_PTT_RIG,
+    .dcd_type =  RIG_DCD_RIG,
+    .port_type =  RIG_PORT_SERIAL,
+    .serial_rate_min =  9600,
+    .serial_rate_max =  57600,
+    .serial_data_bits =  8,
+    .serial_stop_bits =  1,
+    .serial_parity =  RIG_PARITY_NONE,
+    .serial_handshake =  RIG_HANDSHAKE_NONE,
+    .write_delay =  0,
+    .post_write_delay =  0,
+    .timeout =  1000,
+    .retry =  3,
+
+    .has_get_func =  TMD710_FUNC_GET,
+    .has_set_func =  TMD710_FUNC_SET,
+    .has_get_level =  TMD710_LEVEL_ALL,
+    .has_set_level =  RIG_LEVEL_SET(TMD710_LEVEL_ALL),
+    .has_get_parm =  TMD710_PARMS,
+    .has_set_parm =  TMD710_PARMS,
+    .level_gran = {},
+    .parm_gran =  {},
+    .ctcss_list =  kenwood42_ctcss_list,
+    .dcs_list =  common_dcs_list,
+    .preamp =   {RIG_DBLST_END,},
+    .attenuator =   {RIG_DBLST_END,},
+    .max_rit =  Hz(0),
+    .max_xit =  Hz(0),
+    .max_ifshift =  Hz(0),
+    .vfo_ops =  TMD710_VFO_OP,
+    .scan_ops = RIG_SCAN_NONE,
+    .targetable_vfo =  RIG_TARGETABLE_NONE,
+    .transceive =  RIG_TRN_OFF,
+    .bank_qty =   0,
+    .chan_desc_sz =  8,
+
+    .chan_list = {
+        {0, 199, RIG_MTYPE_MEM, {TMD710_CHANNEL_CAPS}},  /* normal MEM */
+        {200, 219, RIG_MTYPE_EDGE, {TMD710_CHANNEL_CAPS}}, /* U/L MEM */
+        {221, 222, RIG_MTYPE_CALL, {TMD710_CHANNEL_CAPS_WO_LO}},  /* Call 0/1 */
+        RIG_CHAN_END,
+    },
+    /*
+     * TODO: Japan & TM-D700S, and Taiwan models
+     */
+    .rx_range_list1 =  {
+        {MHz(118), MHz(470), TMD710_MODES, -1, -1, RIG_VFO_A | RIG_VFO_MEM},
+        {MHz(136), MHz(174), TMD710_MODES_FM, -1, -1, RIG_VFO_A | RIG_VFO_B | RIG_VFO_MEM},
+        {MHz(300), MHz(524), TMD710_MODES_FM, -1, -1, RIG_VFO_A | RIG_VFO_B | RIG_VFO_MEM},
+        {MHz(800), MHz(1300), TMD710_MODES_FM, -1, -1, RIG_VFO_B | RIG_VFO_MEM},
+        RIG_FRNG_END,
+    }, /* rx range */
+    .tx_range_list1 =  {
+        {MHz(144), MHz(146), TMD710_MODES_TX, W(5), W(50), RIG_VFO_A | RIG_VFO_B | RIG_VFO_MEM},
+        {MHz(430), MHz(440), TMD710_MODES_TX, W(5), W(35), RIG_VFO_A | RIG_VFO_B | RIG_VFO_MEM},
+        RIG_FRNG_END,
+    }, /* tx range */
+
+    .rx_range_list2 =  {
+        {MHz(118), MHz(470), TMD710_MODES, -1, -1, RIG_VFO_A | RIG_VFO_MEM},
+        {MHz(136), MHz(174), TMD710_MODES_FM, -1, -1, RIG_VFO_A | RIG_VFO_B | RIG_VFO_MEM},
+        {MHz(300), MHz(524), TMD710_MODES_FM, -1, -1, RIG_VFO_A | RIG_VFO_B | RIG_VFO_MEM},
+        {MHz(800), MHz(1300), TMD710_MODES_FM, -1, -1, RIG_VFO_B | RIG_VFO_MEM},  /* TODO: cellular blocked */
+        RIG_FRNG_END,
+    }, /* rx range */
+    .tx_range_list2 =  {
+        {MHz(144), MHz(148), TMD710_MODES_TX, W(5), W(50), RIG_VFO_A | RIG_VFO_B | RIG_VFO_MEM},
+        {MHz(430), MHz(450), TMD710_MODES_TX, W(5), W(35), RIG_VFO_A | RIG_VFO_B | RIG_VFO_MEM},
+        RIG_FRNG_END,
+    }, /* tx range */
+
+    .tuning_steps =  {
+        {TMD710_MODES, kHz(5)},
+        {TMD710_MODES, kHz(6.25)},
+        {TMD710_MODES, kHz(8.33)},
+        {TMD710_MODES, kHz(10)},
+        {TMD710_MODES, kHz(12.5)},
+        {TMD710_MODES, kHz(15)},
+        {TMD710_MODES, kHz(20)},
+        {TMD710_MODES, kHz(25)},
+        {TMD710_MODES, kHz(30)},
+        {TMD710_MODES, kHz(50)},
+        {TMD710_MODES, kHz(100)},
+        RIG_TS_END,
+    },
+    /* mode/filter list, remember: order matters! */
+    .filters =  {
+        {RIG_MODE_FM, kHz(15)},
+        {RIG_MODE_FMN, kHz(5)},
+        {RIG_MODE_AM, kHz(4)},
+        RIG_FLT_END,
+    },
+    .priv = (void *)& tmd710_priv_caps,
+
+    .rig_init = kenwood_init,
+    .rig_open = kenwood_open,
+    .rig_close = kenwood_close,
     .rig_cleanup = kenwood_cleanup,
     .set_freq =  tmd710_set_freq,
     .get_freq =  tmd710_get_freq,
@@ -401,6 +550,7 @@ const struct rig_caps tmd710_caps = {
     .get_rptr_offs = tmd710_get_rptr_offs,
 
     .decode_event =  th_decode_event,
+    .hamlib_check_rig_caps = HAMLIB_CHECK_RIG_CAPS
 };
 
 /* structure for handling FO radio command */
@@ -485,6 +635,17 @@ typedef struct {
   int auto_pm_store; // P41 0/1
   int display_partition_bar; // P42 0/1
 } tmd710_mu;
+
+static int tmd710_open(RIG *rig) {
+	
+	rig_debug(RIG_DEBUG_TRACE, "%s: called\n", __func__);
+
+	rig->state.tx_vfo = RIG_VFO_A;
+	rig_debug(RIG_DEBUG_TRACE, "RIG_VFO_A: %d\trig->state.tx_vfo: %d\n", RIG_VFO_A, rig->state.tx_vfo);
+
+
+	return 0;
+}
 
 static int tmd710_get_vfo_num(RIG *rig, int *vfonum, vfo_t *vfo) {
   char buf[10];
@@ -934,8 +1095,9 @@ int tmd710_push_mu(RIG *rig, tmd710_mu *mu_struct)
 /*
  * tmd710_set_freq
  * Assumes rig!=NULL
+ * Common function for getting the main and split frequency.
  */
-int tmd710_set_freq(RIG *rig, vfo_t vfo, freq_t freq)
+int tmd710_do_set_freq(RIG *rig, vfo_t vfo, freq_t freq)
 {
   int retval;
   tmd710_fo fo_struct;
@@ -963,19 +1125,21 @@ int tmd710_set_freq(RIG *rig, vfo_t vfo, freq_t freq)
   fo_struct.step = freq_sent >= MHz(470) ? 4 : step;
   fo_struct.freq = freq_sent >= MHz(470) ? (round(freq_sent / 10000) * 10000) : freq_sent;
 
+  //return tmd710_push_fo(rig, vfo, &fo_struct);
   return tmd710_push_fo(rig, vfo, &fo_struct);
 }
 
 /*
- * tmd710_get_freq
+ * tmd710_do_get_freq
  * Assumes rig!=NULL, freq!=NULL
+ * Common function for getting the main and split frequency.
  */
-int tmd710_get_freq(RIG *rig, vfo_t vfo, freq_t *freq)
+int tmd710_do_get_freq(RIG *rig, vfo_t vfo, freq_t *freq)
 {
   tmd710_fo fo_struct;
   int retval;
 
-  rig_debug(RIG_DEBUG_TRACE, "%s: called\n", __func__);
+  rig_debug(RIG_DEBUG_TRACE, "%s: called for vfo: %s(%d)\n", __func__, rig_strvfo(vfo), vfo);
 
   retval = tmd710_pull_fo(rig, vfo, &fo_struct);
 
@@ -984,6 +1148,58 @@ int tmd710_get_freq(RIG *rig, vfo_t vfo, freq_t *freq)
   }
 
   return retval;
+}
+
+/*
+ * tmd710_set_freq
+ * Assumes rig!=NULL, freq!=NULL
+ */
+int tmd710_set_freq(RIG *rig, vfo_t vfo, freq_t freq) {
+
+	rig_debug(RIG_DEBUG_TRACE, "%s: called for vfo: %s(%d)\n", __func__, rig_strvfo(vfo), vfo);
+
+  	vfo = rig->state.tx_vfo == RIG_VFO_A ? RIG_VFO_B : RIG_VFO_A;
+
+	return tmd710_do_set_freq(rig, vfo, freq);
+}
+
+/*
+ * tmd710_get_freq
+ * Assumes rig!=NULL, freq!=NULL
+ */
+int tmd710_get_freq(RIG *rig, vfo_t vfo, freq_t *freq) {
+	 
+	rig_debug(RIG_DEBUG_TRACE, "%s: called\n", __func__);
+
+	vfo = rig->state.tx_vfo == RIG_VFO_A ? RIG_VFO_B : RIG_VFO_A;
+
+	return tmd710_do_get_freq(rig, vfo, freq);
+}
+
+/*
+ * tmd710_set_split_freq
+ * Assumes rig!=NULL, freq!=NULL
+ */
+int tmd710_set_split_freq(RIG *rig, vfo_t vfo, freq_t freq) {
+
+	rig_debug(RIG_DEBUG_TRACE, "%s: called\n", __func__);
+	
+	vfo = rig->state.tx_vfo == RIG_VFO_A ? RIG_VFO_A : RIG_VFO_B;
+
+	return tmd710_do_set_freq(rig, vfo, freq);
+}
+
+/*
+ * tmd710_get_split_freq
+ * Assumes rig!=NULL, freq!=NULL
+ */
+int tmd710_get_split_freq(RIG *rig, vfo_t vfo, freq_t *freq) {
+	 
+	rig_debug(RIG_DEBUG_TRACE, "%s: called\n", __func__);
+
+	vfo = rig->state.tx_vfo == RIG_VFO_A ? RIG_VFO_A : RIG_VFO_B;
+	
+	return tmd710_do_get_freq(rig, vfo, freq);
 }
 
 static int tmd710_find_ctcss_index(RIG *rig, tone_t tone, int *ctcss_index) {
@@ -1120,7 +1336,8 @@ int tmd710_get_dcs_sql(RIG *rig, vfo_t vfo, tone_t *code)
   }
 
   if (fo_struct.dcs) {
-    *code = common_dcs_list[fo_struct.dcs_val];
+    tone_t *dcs_list = common_dcs_list;
+    *code = dcs_list[fo_struct.dcs_val];
   } else {
     *code = 0;
   }
@@ -1132,8 +1349,9 @@ static int tmd710_find_dcs_index(tone_t code, int *dcs_index) {
   int i = 0;
 
   // we only allow exact matches here
-  while (code != common_dcs_list[i]) {
-    if (common_dcs_list[i] == 0) {
+  tone_t *dcs_list = common_dcs_list;
+  while (code != dcs_list[i]) {
+    if (dcs_list[i] == 0) {
       return -RIG_EINVAL;
     }
     i++;
@@ -1189,7 +1407,7 @@ static int tmd710_get_mode_hamlib_values(int tmd710_mode, rmode_t *mode, pbwidth
       *width = 4000;
       break;
     default:
-      rig_debug(RIG_DEBUG_ERR, "%s: Illegal value from radio '%ld'\n", __func__, tmd710_mode);
+      rig_debug(RIG_DEBUG_ERR, "%s: Illegal value from radio '%ld'\n", __func__, (long)tmd710_mode);
       return -RIG_EINVAL;
   }
 
@@ -1228,7 +1446,7 @@ static int tmd710_get_mode_tmd710_value(rmode_t mode, int *tmd710_mode) {
   } else if (mode == RIG_MODE_AM) {
     *tmd710_mode = 2;
   } else {
-    rig_debug(RIG_DEBUG_ERR, "%s: Illegal value from radio '%ld'\n", __func__, mode);
+    rig_debug(RIG_DEBUG_ERR, "%s: Illegal value from radio '%ld'\n", __func__, (long)mode);
     return -RIG_EINVAL;
   }
 
@@ -1241,7 +1459,7 @@ static int tmd710_get_mode_tmd710_value(rmode_t mode, int *tmd710_mode) {
  */
 static int tmd710_set_mode(RIG *rig, vfo_t vfo, rmode_t mode, pbwidth_t width)
 {
-  int retval, tmd710_mode;
+  int retval, tmd710_mode = RIG_MODE_NONE;
   tmd710_fo fo_struct;
 
   rig_debug(RIG_DEBUG_TRACE, "%s: called\n", __func__);
@@ -1264,7 +1482,8 @@ static int tmd710_set_mode(RIG *rig, vfo_t vfo, rmode_t mode, pbwidth_t width)
 static int tmd710_find_tuning_step_index(RIG *rig, shortfreq_t ts, int *step_index) {
   int k, stepind = -1;
 
-  for (k = 0; k < TSLSTSIZ; k++) {
+  for (k = 0; rig->state.tuning_steps[k].ts != 0; ++k) {
+
     if ((rig->caps->tuning_steps[k].modes == RIG_MODE_NONE)
         && (rig->caps->tuning_steps[k].ts == 0))
       break;
@@ -1552,6 +1771,61 @@ int tmd710_set_vfo(RIG *rig, vfo_t vfo)
   return RIG_OK;
 }
 
+/*
+*	tmd710_set_split_vfo
+*
+*	This radio has two VFOs, and either one can be the TX/RX.  As such, this function does two things:
+*	- Sets PTT control on the specified VFO.
+*	- Sets the TX_VFO and RX_VFO for use in Set_Freq and Set_Split_Freq
+*	- The value of split is ignored, as the radio is always in "split" mode.
+*
+*/
+int tmd710_set_split_vfo (RIG *rig, vfo_t vfo, split_t split, vfo_t txvfo)
+{
+    char vfobuf[16], ackbuf[16];
+    int retval;
+
+    rig_debug(RIG_DEBUG_TRACE, "%s: called vfo: %s\ttxvfo: %s\n", __func__, rig_strvfo(vfo), rig_strvfo(txvfo));
+	
+	rig->state.tx_vfo = txvfo;
+
+	int txVfoIndex = txvfo == RIG_VFO_A ? 0 : 1;
+
+	sprintf(vfobuf, "BC %d,%d", txVfoIndex, txVfoIndex );
+    retval = kenwood_transaction(rig, vfobuf, ackbuf, sizeof(ackbuf));
+	if (retval != RIG_OK)
+        return retval;
+
+    
+    return RIG_OK;
+}
+
+int tmd710_get_split_vfo (RIG *rig, vfo_t vfo, split_t *split, vfo_t *txvfo)
+{
+    char buf[10];
+    int retval;
+
+    rig_debug(RIG_DEBUG_TRACE, "%s: called\n", __func__);
+
+	/* Get VFO band */
+
+	retval = kenwood_safe_transaction(rig, "BC", buf, 10, 6);
+	if (retval != RIG_OK)
+		return retval;
+
+	switch (buf[5]) {
+	   	case '0': *txvfo = RIG_VFO_A; break;
+		case '1': *txvfo = RIG_VFO_B; break;
+		default:
+			rig_debug(RIG_DEBUG_ERR, "%s: Unexpected txVFO value '%c'\n", __func__, buf[5]);
+			return -RIG_EPROTO;
+	}
+
+    rig->state.tx_vfo = *txvfo;
+
+	return RIG_OK;
+}
+
 int tmd710_get_mem(RIG *rig, vfo_t vfo, int *ch)
 {
   char cmd[16];
@@ -1612,7 +1886,7 @@ int tmd710_set_mem(RIG *rig, vfo_t vfo, int ch)
   return kenwood_safe_transaction(rig, cmd, membuf, sizeof(membuf), 8);
 }
 
-int tmd710_get_channel(RIG *rig, channel_t *chan)
+int tmd710_get_channel(RIG *rig, vfo_t vfo, channel_t *chan, int read_only)
 {
   int retval;
   tmd710_me me_struct;
@@ -1654,7 +1928,8 @@ int tmd710_get_channel(RIG *rig, channel_t *chan)
   chan->ctcss_sql = rig->caps->ctcss_list[me_struct.ct_freq];
   chan->dcs_code = 0;
   if (me_struct.dcs) {
-    chan->dcs_sql = common_dcs_list[me_struct.dcs_val];
+    tone_t *dcs_list = common_dcs_list;
+    chan->dcs_sql = dcs_list[me_struct.dcs_val];
   } else {
     chan->dcs_sql = 0;
   }
@@ -1695,7 +1970,7 @@ int tmd710_get_channel(RIG *rig, channel_t *chan)
   return RIG_OK;
 }
 
-int tmd710_set_channel(RIG *rig, const channel_t *chan)
+int tmd710_set_channel(RIG *rig, vfo_t vfo, const channel_t *chan)
 {
   int retval;
   tmd710_me me_struct;
@@ -1801,7 +2076,7 @@ int tmd710_get_dcd(RIG *rig, vfo_t vfo, dcd_t *dcd)
 
   retval = sscanf(buf, "BY %d,%d", &vfonum, &dcd_val);
   if (retval != 2) {
-    rig_debug(RIG_DEBUG_ERR, "%s: unexpected reply '%s', len=%d\n", __func__, buf);
+    rig_debug(RIG_DEBUG_ERR, "%s: unexpected reply '%s', len=%ld\n", __func__, buf, (long)strlen(buf));
     return -RIG_EPROTO;
   }
 
@@ -1813,7 +2088,7 @@ int tmd710_get_dcd(RIG *rig, vfo_t vfo, dcd_t *dcd)
       *dcd = RIG_DCD_ON;
       break;
     default:
-      rig_debug(RIG_DEBUG_ERR, "%s: unexpected reply '%s', len=%d\n", __func__, buf);
+      rig_debug(RIG_DEBUG_ERR, "%s: unexpected reply '%s', len=%ld\n", __func__, buf, (long)strlen(buf));
       return -RIG_ERJCTED;
   }
 
@@ -1889,7 +2164,7 @@ int tmd710_get_level(RIG *rig, vfo_t vfo, setting_t level, value_t *val)
       break;
 
     default:
-      rig_debug(RIG_DEBUG_ERR, "%s: Unsupported Level %d\n", __func__, level);
+      rig_debug(RIG_DEBUG_ERR, "%s: Unsupported Level %ld\n", __func__, (long)level);
       return -RIG_EINVAL;
   }
 
@@ -1923,7 +2198,7 @@ int tmd710_set_level(RIG *rig, vfo_t vfo, setting_t level, value_t val)
       return kenwood_transaction(rig, buf, ackbuf, sizeof(ackbuf));
 
     default:
-      rig_debug(RIG_DEBUG_ERR, "%s: Unsupported Level %d\n", __func__, level);
+      rig_debug(RIG_DEBUG_ERR, "%s: Unsupported Level %ld\n", __func__, (long)level);
       return -RIG_EINVAL;
   }
 }
@@ -1988,7 +2263,7 @@ int tmd710_get_func(RIG *rig, vfo_t vfo, setting_t func, int *status)
   tmd710_fo fo_struct;
   tmd710_mu mu_struct;
 
-  rig_debug(RIG_DEBUG_TRACE, "%s: called (0x%04x)\n", __func__, func);
+  rig_debug(RIG_DEBUG_TRACE, "%s: called (0x%04lx)\n", __func__, (long)func);
 
   switch (func) {
     case RIG_FUNC_TONE:
@@ -2039,7 +2314,7 @@ int tmd710_get_func(RIG *rig, vfo_t vfo, setting_t func, int *status)
       *status = (mu_struct.scan_resume == TMD710_SCAN_RESUME_TIME) ? 1 : 0;
       break;
     default:
-      rig_debug(RIG_DEBUG_ERR, "%s: Unsupported function %#x\n", __func__, func);
+      rig_debug(RIG_DEBUG_ERR, "%s: Unsupported function %#lx\n", __func__, (long)func);
       return -RIG_EINVAL;
   }
 
@@ -2057,7 +2332,7 @@ int tmd710_set_func(RIG *rig, vfo_t vfo, setting_t func, int status)
   tmd710_fo fo_struct;
   tmd710_mu mu_struct;
 
-  rig_debug(RIG_DEBUG_TRACE, "%s: called (0x%04x)\n", __func__, func);
+  rig_debug(RIG_DEBUG_TRACE, "%s: called (0x%04lx)\n", __func__, (long)func);
 
   switch (func) {
     case RIG_FUNC_TONE:
@@ -2111,7 +2386,7 @@ int tmd710_set_func(RIG *rig, vfo_t vfo, setting_t func, int status)
     case RIG_FUNC_TBURST:
       return tmd710_tburst(rig, status);
     default:
-      rig_debug(RIG_DEBUG_ERR, "%s: Unsupported function %#x\n", __func__, func);
+      rig_debug(RIG_DEBUG_ERR, "%s: Unsupported function %#lx\n", __func__, (long)func);
       return -RIG_EINVAL;
   }
 
@@ -2135,7 +2410,7 @@ int tmd710_get_parm(RIG *rig, setting_t parm, value_t *val)
   int retval;
   tmd710_mu mu_struct;
 
-  rig_debug(RIG_DEBUG_TRACE, "%s: called (0x%04x)\n", __func__, parm);
+  rig_debug(RIG_DEBUG_TRACE, "%s: called (0x%04lx)\n", __func__, (long)parm);
 
   retval = tmd710_pull_mu(rig, &mu_struct);
   if (retval != RIG_OK) {
@@ -2157,7 +2432,7 @@ int tmd710_get_parm(RIG *rig, setting_t parm, value_t *val)
       val->f = ((float) mu_struct.brightness_level) / 8.0f;
       break;
     default:
-      rig_debug(RIG_DEBUG_ERR, "%s: Unsupported parm %#x\n", __func__, parm);
+      rig_debug(RIG_DEBUG_ERR, "%s: Unsupported parm %#lx\n", __func__, (long)parm);
       return -RIG_EINVAL;
   }
 
@@ -2206,7 +2481,7 @@ int tmd710_set_parm(RIG *rig, setting_t parm, value_t val)
       break;
     }
     default:
-      rig_debug(RIG_DEBUG_ERR, "%s: Unsupported parm %#x\n", __func__, parm);
+      rig_debug(RIG_DEBUG_ERR, "%s: Unsupported parm %#lx\n", __func__, (long)parm);
       return -RIG_EINVAL;
   }
 
@@ -2234,7 +2509,7 @@ int tmd710_get_ext_level(RIG *rig, vfo_t vfo, token_t token, value_t *val) {
       val->i = mu_struct.ext_data_band;
       break;
     default:
-      rig_debug(RIG_DEBUG_ERR, "%s: Unsupported ext level %d\n", __func__, token);
+      rig_debug(RIG_DEBUG_ERR, "%s: Unsupported ext level %ld\n", __func__, (long)token);
       return -RIG_EINVAL;
   }
 
@@ -2269,7 +2544,7 @@ int tmd710_set_ext_level(RIG *rig, vfo_t vfo, token_t token, value_t val) {
       break;
     }
     default:
-      rig_debug(RIG_DEBUG_ERR, "%s: Unsupported ext level %d\n", __func__, token);
+      rig_debug(RIG_DEBUG_ERR, "%s: Unsupported ext level %ld\n", __func__, (long)token);
       return -RIG_EINVAL;
   }
 

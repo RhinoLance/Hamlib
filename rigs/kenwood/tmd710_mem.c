@@ -261,7 +261,7 @@ const struct confparams tmd710mem_mem_ext_levels[] = {
 };
 
 const struct rig_caps tmd710mem_caps = {
-    .rig_model =  RIG_MODEL_TMD710,
+    .rig_model =  RIG_MODEL_TMD710_MEM,
     .model_name = "TM-D710(G)",
     .mfg_name =  "Kenwood",
     .version =  BACKEND_VER ".2",

@@ -785,7 +785,10 @@ int tmd710mem_get_memory_name(RIG *rig, int ch, char *name)
   }
 
   retval = num_sscanf(buf, "MN %d,%s", &ch, name);
-  if (retval != 2) {
+  if( retval == 1) {
+    name = "";
+  }
+  else if (retval != 2) {
     rig_debug(RIG_DEBUG_ERR, "%s: Unexpected reply '%s'\n", __func__, buf);
     return -RIG_ERJCTED;
   }

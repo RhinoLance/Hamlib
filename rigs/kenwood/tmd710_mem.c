@@ -47,6 +47,7 @@
 #include <stdlib.h>
 #include <math.h>
 #include <ctype.h>
+#include <time.h>
 
 #include "hamlib/rig.h"
 #include "kenwood.h"
@@ -102,6 +103,9 @@ static int tmd710mem_set_parm(RIG *rig, setting_t parm, value_t val);
 static int tmd710mem_get_ext_level(RIG *rig, vfo_t vfo, token_t token, value_t *val);
 static int tmd710mem_set_ext_level(RIG *rig, vfo_t vfo, token_t token, value_t val);
 static struct StepFreq tmd710mem_resolve_supported_freq(int freq);
+static int tmd710mem_set_clean_memory_channel(RIG *rig, int channel);
+
+static int tmd710mem_initHasRun = 0;
 
 #define tmd710mem_MODES     (RIG_MODE_FM|RIG_MODE_FMN|RIG_MODE_AM)
 #define tmd710mem_MODES_FM  (RIG_MODE_FM|RIG_MODE_FMN)
@@ -364,7 +368,7 @@ const struct rig_caps tmd710mem_caps = {
 
     .rig_init = kenwood_init,
     .rig_open = tmd710mem_open,
-	.rig_cleanup = kenwood_cleanup,
+	  .rig_cleanup = kenwood_cleanup,
     .set_freq =  tmd710mem_set_freq,
     .get_freq =  tmd710mem_get_freq,
     .set_split_freq =  tmd710mem_set_split_freq,
@@ -497,21 +501,100 @@ typedef struct {
   int display_partition_bar; // P42 0/1
 } tmd710mem_mu;
 
+static int tmd710mem_open(RIG *rig) {
+	
+	rig_debug(RIG_DEBUG_TRACE, "%s: called\n", __func__);
+
+	rig->state.tx_vfo = RIG_VFO_A;
+	rig_debug(RIG_DEBUG_TRACE, "RIG_VFO_A: %d\trig->state.tx_vfo: %d\n", RIG_VFO_A, rig->state.tx_vfo);
+  
+  // Sleep the ensure the serial connection has been established beofore trying 
+  // communicate with the radio.
+  long msec = 1000;
+  struct timespec ts;
+  ts.tv_sec = msec / 1000;
+  ts.tv_nsec = (msec % 1000) * 1000000;
+  nanosleep(&ts, &ts);
+  
+  int retval = tmd710_setup(rig);
+  if (retval != RIG_OK)
+  {
+    return retval;
+  }
+
+  return 0;
+}
+
 /*
 All operations will be using memory channels, so perform the following init:
 
 - Create (if required) the memory channels
 - Put the both sides of the radio in memory mode and set channels.
+- Assign PTT to the right side of the radio
 */
-static int tmd710mem_open(RIG *rig) {
-	
-	rig_debug(RIG_DEBUG_TRACE, "%s: called\n", __func__);
+int tmd710_setup(RIG *rig) {
 
-	//rig->state.tx_vfo = RIG_VFO_A;
-	//rig_debug(RIG_DEBUG_TRACE, "RIG_VFO_A: %d\trig->state.tx_vfo: %d\n", RIG_VFO_A, rig->state.tx_vfo);
+  rig_debug(RIG_DEBUG_TRACE, "%s: called\n", __func__);
 
-  
-	return 0;
+  // create two clean memory channels with clean defaults set.
+  int retval998 = tmd710mem_set_clean_memory_channel(rig, tmd710mem_MEM_A);
+  int retval999 = tmd710mem_set_clean_memory_channel(rig, tmd710mem_MEM_B);
+  if (retval998 != RIG_OK || retval999 != RIG_OK)
+  {
+    return retval998 != RIG_OK ? retval998 : retval999;
+  }
+
+  // assign respective channels to each side of the radio
+  int retvalA = tmd710mem_set_mem(rig, RIG_VFO_A, tmd710mem_MEM_A);
+  int retvalB = tmd710mem_set_mem(rig, RIG_VFO_B, tmd710mem_MEM_B);
+  if (retvalA != RIG_OK || retvalB != RIG_OK)
+  {
+    return retvalA != RIG_OK ? retvalA : retvalB;
+  }
+
+  // set control to the right of the radio.
+  /*
+  int retValSet = tmd710mem_set_vfo(rig, RIG_VFO_B);
+  if (retValSet != RIG_OK)
+  {
+    return retValSet;
+  }
+  */
+ 
+  return 0;
+}
+
+int tmd710mem_set_clean_memory_channel(RIG *rig, int channel)
+{
+
+  rig_debug(RIG_DEBUG_TRACE, "%s: called\n", __func__);
+
+  tmd710mem_me me_struct;
+
+  me_struct.channel = channel;
+  me_struct.freq = 146500000;
+  me_struct.step = 0;
+  me_struct.shift = 0;
+  me_struct.reverse = 0;
+  me_struct.tone = 0;
+  me_struct.ct = 0;
+  me_struct.dcs = 0;
+  me_struct.tone_freq = 0;
+  me_struct.ct_freq = 0;
+  me_struct.dcs_val = 0;
+  me_struct.offset = 0;
+  me_struct.mode = 0;
+  me_struct.tx_freq = 146500000;
+  me_struct.p15_unknown = 0;
+  me_struct.lockout = 0;
+
+  int retval = tmd710mem_push_me(rig, &me_struct);
+  if (retval != RIG_OK)
+  {
+    return retval;
+  }
+
+  return retval;
 }
 
 static int tmd710mem_get_vfo_num(RIG *rig, int *vfonum, vfo_t *vfo) {
@@ -1007,8 +1090,10 @@ int tmd710mem_do_set_freq(RIG *rig, int channel, freq_t freq)
 
   struct StepFreq sf = tmd710mem_resolve_supported_freq(freq);
 
+  me_struct.channel = channel;
   me_struct.step = sf.step;
   me_struct.freq = sf.frequency;
+  me_struct.tx_freq = sf.frequency;
 
   return tmd710mem_push_me(rig, &me_struct);
 }

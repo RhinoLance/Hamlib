@@ -287,7 +287,6 @@ extern const struct rig_caps thg71_caps;
 extern const struct rig_caps tmv7_caps;
 extern const struct rig_caps tmv71_caps;
 extern const struct rig_caps tmd710_caps;
-extern const struct rig_caps tmd710mem_caps;
 
 extern const struct rig_caps ts440_caps;
 extern const struct rig_caps ts940_caps;

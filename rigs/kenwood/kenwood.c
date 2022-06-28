@@ -124,7 +124,6 @@ static const struct kenwood_id_string kenwood_id_string_list[] =
     { RIG_MODEL_THD7AG, "TH-D7G" },
     { RIG_MODEL_TMD700, "TM-D700" },
     { RIG_MODEL_TMD710, "TM-D710" },
-    { RIG_MODEL_TMD710_MEM, "TM-D710_MEM" },
     { RIG_MODEL_THD72A, "TH-D72" },
     { RIG_MODEL_THD74, "TH-D74" },
     { RIG_MODEL_TMV7, "TM-V7" },

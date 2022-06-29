@@ -450,8 +450,7 @@ int rig_pull_me(RIG * rig, int ch, struct tmv71_me *me_struct)
 			return retval;
 		}
 
-		retval = num_sscanf(buf, "ME %d,%" SCNfreq ",%d,%d,%d,%d,%d,%d,%d,%d,\
-				%d,%d,%d,%" SCNfreq ",%d,%d",
+		retval = num_sscanf(buf, "ME %d,%" SCNfreq ",%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%" SCNfreq ",%d,%d",
 			&me_struct->channel, &me_struct->freq,
 			&me_struct->step, &me_struct->shift,
 			&me_struct->reverse, &me_struct->tone,
@@ -481,8 +480,7 @@ int rig_push_me(RIG *rig, struct tmv71_me *me_struct)
 
 	rig_debug(RIG_DEBUG_TRACE, "%s: called\n", __func__);
 
-	snprintf(cmdbuf, sizeof(cmdbuf), "ME %03d,%010.0f,%1d,%1d,%1d,%1d,%1d,%1d,\
-				%02d,%02d,%03d,%08d,%1d,%010.0f,%1d,%1d",
+	snprintf(cmdbuf, sizeof(cmdbuf), "ME %03d,%010.0f,%1d,%1d,%1d,%1d,%1d,%1d,%02d,%02d,%03d,%08d,%1d,%010.0f,%1d,%1d",
 			 me_struct->channel, me_struct->freq,
 			 me_struct->step, me_struct->shift,
 			 me_struct->reverse, me_struct->tone,
@@ -579,10 +577,11 @@ int rig_pull_bc(RIG *rig, struct tmv71_bc *bc_struct)
  */
 int rig_push_bc(RIG *rig, struct tmv71_bc *bc_struct)
 {
+	rig_debug(RIG_DEBUG_TRACE, "%s - called to set CRTL to: %d and PTT to: %d\n", 
+		__func__, bc_struct->ctrl, bc_struct->ptt);
+
 	char cmdbuf[80];
 	char buf[80];
-
-	rig_debug(RIG_DEBUG_TRACE, "%s: called\n", __func__);
 
 	snprintf(cmdbuf, sizeof(cmdbuf), "BC %1d,%1d",
 			 bc_struct->ctrl, bc_struct->ptt);
@@ -1378,6 +1377,17 @@ int tmv71_set_vfo(RIG *rig, vfo_t vfo)
 		{
 			return retval;
 		}
+	}
+
+	// Make it the active VFO
+	struct tmv71_bc bc_struct;
+	bc_struct.ctrl = band;
+	bc_struct.ptt = band;
+
+	retval = rig_push_bc(rig, &bc_struct);
+	if (retval != RIG_OK)
+	{
+		return retval;
 	}
 
 	return RIG_OK;

@@ -407,7 +407,8 @@ static int tmv71_open(RIG *rig)
 }
 
 static int tmv71_vfo_to_channel(vfo_t vfo){
-	return vfo = tmv71_BAND_A ? tmv71_BAND_A_CHANNEL : tmv71_BAND_B_CHANNEL;
+	rig_debug(RIG_DEBUG_TRACE, "%s: called with vfo: %d\n", __func__, vfo);
+	return (vfo = tmv71_BAND_A) ? tmv71_BAND_A_CHANNEL : tmv71_BAND_B_CHANNEL;
 }
 
 static struct tmv71_me tmv71_get_update_me(){
@@ -449,24 +450,22 @@ int rig_pull_me(RIG * rig, int ch, struct tmv71_me *me_struct)
 			return retval;
 		}
 
-		retval = num_sscanf(buf, "ME %d,%" SCNfreq ",%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%" SCNfreq ",%d,%d",
-							&me_struct->channel, &me_struct->freq,
-							&me_struct->step, &me_struct->shift,
-							&me_struct->reverse, &me_struct->tone,
-							&me_struct->ct, &me_struct->dcs,
-							&me_struct->tone_freq, &me_struct->ct_freq,
-							&me_struct->dcs_val, &me_struct->offset,
-							&me_struct->mode, &me_struct->tx_freq,
-							&me_struct->tx_step, &me_struct->lockout);
+		retval = num_sscanf(buf, "ME %d,%" SCNfreq ",%d,%d,%d,%d,%d,%d,%d,%d,\
+				%d,%d,%d,%" SCNfreq ",%d,%d",
+			&me_struct->channel, &me_struct->freq,
+			&me_struct->step, &me_struct->shift,
+			&me_struct->reverse, &me_struct->tone,
+			&me_struct->ct, &me_struct->dcs,
+			&me_struct->tone_freq, &me_struct->ct_freq,
+			&me_struct->dcs_val, &me_struct->offset,
+			&me_struct->mode, &me_struct->tx_freq,
+			&me_struct->tx_step, &me_struct->lockout);
 
 		if (retval != 16)
 		{
-			rig_debug(RIG_DEBUG_ERR, "%s: Unexpected reply '%s'\n", __func__, buf);
+			rig_debug(RIG_DEBUG_ERR, "%s: Unexpected reply '%s'\n",
+				 __func__, buf);
 			return -RIG_ERJCTED;
-		}
-		if (retval != RIG_OK)
-		{
-			return retval;
 		}
 
 		return RIG_OK;
@@ -482,7 +481,8 @@ int rig_push_me(RIG *rig, struct tmv71_me *me_struct)
 
 	rig_debug(RIG_DEBUG_TRACE, "%s: called\n", __func__);
 
-	snprintf(cmdbuf, sizeof(cmdbuf), "ME %03d,%010.0f,%1d,%1d,%1d,%1d,%1d,%1d,%02d,%02d,%03d,%08d,%1d,%010.0f,%1d,%1d",
+	snprintf(cmdbuf, sizeof(cmdbuf), "ME %03d,%010.0f,%1d,%1d,%1d,%1d,%1d,%1d,\
+				%02d,%02d,%03d,%08d,%1d,%010.0f,%1d,%1d",
 			 me_struct->channel, me_struct->freq,
 			 me_struct->step, me_struct->shift,
 			 me_struct->reverse, me_struct->tone,
@@ -522,10 +522,6 @@ int rig_pull_vm(RIG *rig, int band, struct tmv71_vm *vm_struct)
 		rig_debug(RIG_DEBUG_ERR, "%s: Unexpected reply '%s'\n", __func__, buf);
 		return -RIG_ERJCTED;
 	}
-	if (retval != RIG_OK)
-	{
-		return retval;
-	}
 
 	return RIG_OK;
 }
@@ -551,10 +547,10 @@ int rig_push_vm(RIG *rig, struct tmv71_vm *vm_struct)
  */
 int rig_pull_bc(RIG *rig, struct tmv71_bc *bc_struct)
 {
+	rig_debug(RIG_DEBUG_TRACE, "%s: called\n", __func__);
+
 	char cmdbuf[80];
 	char buf[80];
-
-	rig_debug(RIG_DEBUG_TRACE, "%s: called\n", __func__);
 
 	snprintf(cmdbuf, sizeof(cmdbuf), "BC");
 
@@ -562,6 +558,7 @@ int rig_pull_bc(RIG *rig, struct tmv71_bc *bc_struct)
 	retval = kenwood_transaction(rig, cmdbuf, buf, sizeof(buf));
 	if (retval != RIG_OK)
 	{
+		rig_debug(RIG_DEBUG_TRACE, "%d: failed after kenwood_transaction\n", retval);
 		return retval;
 	}
 
@@ -572,10 +569,6 @@ int rig_pull_bc(RIG *rig, struct tmv71_bc *bc_struct)
 	{
 		rig_debug(RIG_DEBUG_ERR, "%s: Unexpected reply '%s'\n", __func__, buf);
 		return -RIG_ERJCTED;
-	}
-	if (retval != RIG_OK)
-	{
-		return retval;
 	}
 
 	return RIG_OK;
@@ -605,7 +598,7 @@ int rig_pull_mr(RIG *rig, int band, int *channel)
 	char cmdbuf[80];
 	char buf[80];
 
-	rig_debug(RIG_DEBUG_TRACE, "%s: called\n", __func__);
+	rig_debug(RIG_DEBUG_TRACE, "%s - called for band %d\n", __func__, band);
 
 	snprintf(cmdbuf, sizeof(cmdbuf), "MR %d", band);
 
@@ -616,17 +609,15 @@ int rig_pull_mr(RIG *rig, int band, int *channel)
 		return retval;
 	}
 
-	retval = num_sscanf(buf, "MR %d",
+	rig_debug(RIG_DEBUG_TRACE, "%s - Successfully requested MR\n", __func__);
+	
+	retval = num_sscanf(buf, "MR %*d, %d",
 						channel);
 
 	if (retval != 1)
 	{
 		rig_debug(RIG_DEBUG_ERR, "%s: Unexpected reply '%s'\n", __func__, buf);
 		return -RIG_ERJCTED;
-	}
-	if (retval != RIG_OK)
-	{
-		return retval;
 	}
 
 	return RIG_OK;
@@ -673,10 +664,6 @@ int rig_pull_mn(RIG *rig, int channel, char *name)
 	{
 		rig_debug(RIG_DEBUG_ERR, "%s: Unexpected reply '%s'\n", __func__, buf);
 		return -RIG_ERJCTED;
-	}
-	if (retval != RIG_OK)
-	{
-		return retval;
 	}
 
 	return RIG_OK;
@@ -739,8 +726,8 @@ int rig_pull_by(RIG *rig, vfo_t vfo, dcd_t *dcd)
 	}
 
 	int dcdVal;
-	retval = num_sscanf(buf, "BY %d", &dcdVal);
-
+	retval = sscanf(buf, "BY %d", &dcdVal);
+	
 	switch (dcdVal)
 	{
 	case 0:
@@ -875,9 +862,7 @@ int tmv71_set_freq(RIG *rig, vfo_t vfo, freq_t freq)
 {
 	rig_debug(RIG_DEBUG_TRACE, "%s: called\n", __func__);
 
-	int channel = tmv71_vfo_to_channel(rig->state.rx_vfo);
-
-	return tmv71_do_set_freq(rig, channel, freq);
+	return tmv71_do_set_freq(rig, vfo, freq);
 }
 
 /*
@@ -888,9 +873,7 @@ int tmv71_get_freq(RIG *rig, vfo_t vfo, freq_t *freq)
 {
 	rig_debug(RIG_DEBUG_TRACE, "%s: called\n", __func__);
 
-	int channel = tmv71_vfo_to_channel(rig->state.rx_vfo);
-
-	return tmv71_do_get_freq(rig, channel, freq);
+	return tmv71_do_get_freq(rig, vfo, freq);
 }
 
 /*
@@ -997,7 +980,7 @@ int tmv71_set_mem(RIG *rig, vfo_t vfo, int channel)
  */
 int tmv71_get_mem(RIG *rig, vfo_t vfo, int *channel)
 {
-	rig_debug(RIG_DEBUG_TRACE, "%s: called\n", __func__);
+	rig_debug(RIG_DEBUG_TRACE, "%s: called for vfo: %d\n", __func__, vfo);
 
 	int retval = rig_pull_mr(rig, vfo, channel);
 
@@ -1109,7 +1092,7 @@ int tmv71_code_to_tone(enum tmv71_tone_type type, tone_t code, tone_t *tone)
 		return -RIG_EINVAL;
 	}
 
-	tone = &tone_list[&code];
+	*tone = tone_list[&code];
 
 	return 0;
 }
@@ -1308,21 +1291,29 @@ int tmv71_create_clean_memory_channel(RIG *rig, int channel)
 }
 
 int tmv71_get_current_band(RIG *rig, int *ctrl, int *ptt){
+
+	rig_debug(RIG_DEBUG_VERBOSE, "%s called\n", __func__);
+
 	struct tmv71_bc bc_struct;
 	int retval = rig_pull_bc(rig, &bc_struct);
 	if (retval != RIG_OK)
 	{
+		rig_debug(RIG_DEBUG_VERBOSE, "rig_pull_bc failed with %d\n", retval);
 		return retval;
 	}
 
-	ctrl = &bc_struct.ctrl;
-	ptt = &bc_struct.ptt;
+	rig_debug(RIG_DEBUG_VERBOSE, "rig_pull_bc returned band: %d, ptt: %d\n", bc_struct.ctrl, bc_struct.ptt);
+
+	*ctrl = bc_struct.ctrl;
+	*ptt = bc_struct.ptt;
 
 	return 0;
 }
 
 int tmv71_set_vfo(RIG *rig, vfo_t vfo)
 {
+	rig_debug(RIG_DEBUG_VERBOSE, "%s called with vfo of: %d\n", __func__, vfo);
+
 	int band, ptt, channel, retval;
 
 	channel = 0;
@@ -1370,6 +1361,8 @@ int tmv71_set_vfo(RIG *rig, vfo_t vfo)
 		retval = rig_pull_me(rig, channel, &me_struct);
 		if (retval != RIG_OK)
 		{
+			rig_debug(RIG_DEBUG_VERBOSE, "%s - No psudo vfo.  \
+					Creating channel: %d\n", __func__, vfo);
 
 			// no channel, let's create one.
 			retval = tmv71_create_clean_memory_channel(rig, channel);
@@ -1392,13 +1385,18 @@ int tmv71_set_vfo(RIG *rig, vfo_t vfo)
 
 int tmv71_get_vfo(RIG *rig, vfo_t *vfo){
 
+	rig_debug(RIG_DEBUG_VERBOSE, "%s called\n", __func__);
+
 	// get current band
 	int band, ptt;
 	int retval = tmv71_get_current_band(rig, &band, &ptt);
 	if (retval != RIG_OK)
 	{
+		rig_debug(RIG_DEBUG_VERBOSE, "%s - tmv71_get_current_band failed with %d\n", __func__, retval);
 		return retval;
 	}
+
+	rig_debug(RIG_DEBUG_VERBOSE, "%s - tmv71_get_current_band returned band: %d, ptt: %d\n", __func__, band, ptt);
 
 	//get the momory channel to know if it's a psudo VFD
 	int channel;
@@ -1408,18 +1406,29 @@ int tmv71_get_vfo(RIG *rig, vfo_t *vfo){
 		return retval;
 	}
 
-	switch(channel){
-		case tmv71_BAND_A_CHANNEL:
-			return RIG_VFO_A;
-			break;
+	rig_debug(RIG_DEBUG_VERBOSE, "%s - Finding VFO with channel: %d\n", __func__, channel);
 
-		case tmv71_BAND_B_CHANNEL:
-			return RIG_VFO_B;
-			break;
+	switch (channel)
+	{
+	case tmv71_BAND_A_CHANNEL:
+		*vfo = RIG_VFO_A;
+		rig_debug(RIG_DEBUG_VERBOSE, "%s - matched RIG_VFO_A, vfo should be set to: %d\n", __func__, RIG_VFO_A);
+		break;
 
-		default:
-			return RIG_VFO_MEM;
-	}
+	case tmv71_BAND_B_CHANNEL:
+		*vfo = RIG_VFO_B;
+		rig_debug(RIG_DEBUG_VERBOSE, "%s - matched RIG_VFO_B, vfo should be set to: %d\n", __func__, RIG_VFO_B);
+		break;
+
+	default:
+		*vfo = RIG_VFO_MEM;
+		rig_debug(RIG_DEBUG_VERBOSE, "%s - matched RIG_VFO_MEM, vfo should be set to: %d\n", __func__, RIG_VFO_MEM);
+		}
+
+	rig_debug(RIG_DEBUG_VERBOSE, "%s - mapped channel: %d to vfo: %d\n", __func__, channel, *vfo);
+	rig_debug(RIG_DEBUG_VERBOSE, "%s - returning vfo of: %d\n", __func__, *vfo);
+
+	return RIG_OK;
 }
 
 /*
@@ -1454,6 +1463,8 @@ int tmv71_get_split_vfo(RIG *rig, vfo_t vfo, split_t *split, vfo_t *txvfo)
 
 	*txvfo = rig->state.tx_vfo;
 
+	//The following is just sanity checking.
+
 	int band, ptt;
 	int retval = tmv71_get_current_band(rig, &band, &ptt);
 	if (retval != RIG_OK)
@@ -1472,8 +1483,10 @@ int tmv71_get_split_vfo(RIG *rig, vfo_t vfo, split_t *split, vfo_t *txvfo)
 		//	to the code.  Better to write a warning to the log, and leave the 
 		//	VFO's as set by the set_split_vfo call.
 
-		rig_debug(RIG_DEBUG_WARN, "The PTT band has been manually changed leaving the radio in an inconsistent state.  RigCtl will continue to address %s as the TX band.\n",
-				  ptt == 0 ? "VFO A" : "VFO B");
+		rig_debug(RIG_DEBUG_WARN, "The PTT band has been manually changed \
+				leaving the radio in an inconsistent state.  RigCtl will continue \
+				to address %s as the TX band.\n",
+			ptt == 0 ? "VFO A" : "VFO B");
 	}
 
 	return RIG_OK;

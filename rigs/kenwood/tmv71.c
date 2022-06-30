@@ -349,6 +349,13 @@ enum tmv71_tx_rx
 	rx
 };
 
+struct
+{
+	int vfo_tx;
+	int vfo_rx;
+	int split_mode_active;
+} tmv71_state;
+
 /* structure for handling ME radio command */
 struct tmv71_me
 {
@@ -399,9 +406,9 @@ static int tmv71_open(RIG *rig)
 {
 	rig_debug(RIG_DEBUG_TRACE, "%s: called\n", __func__);
 
-	rig->state.tx_vfo = RIG_VFO_A;
-	rig->state.rx_vfo = RIG_VFO_A;
-	
+	tmv71_state.vfo_tx = RIG_VFO_A;
+	tmv71_state.vfo_tx = RIG_VFO_A;
+
 	return 0;
 }
 
@@ -929,6 +936,30 @@ int tmv71_update_memory_channel(RIG *rig, int channel, struct tmv71_me *me_new)
 }
 
 /*
+ * tmv71_resolve_vfo_name
+ *
+ * Common function for converting a vfo_t to a string.
+ */
+int tmv71_resolve_vfo_name(vfo_t vfo, char *name)
+{
+	switch(vfo){
+		case RIG_VFO_A:
+			strcpy(name, "RIG_VFO_A");
+			break;
+		case RIG_VFO_B:
+			strcpy(name, "RIG_VFO_B");
+			break;
+		case RIG_VFO_CURR :
+			strcpy(name, "RIG_VFO_CURR");
+			break;
+		default:
+			strcpy(name, "UNRESOLVED_VFO");
+	}
+
+	return RIG_OK;
+}
+
+/*
  * tmv71_resolve_freq
  *
  * Common function for converting a frequency into the closes match which
@@ -960,6 +991,45 @@ struct tmv71_stepFreq tmv71_resolve_supported_freq(int freq)
 	result.frequency = resolvedFreq >= MHz(470) ? (round(resolvedFreq / 10000) * 10000) : resolvedFreq;
 
 	return result;
+}
+
+/**
+ * \brief Provides a VFO for split operation
+ * \param for_split_action If the Split VFO is required, 1, else 0
+ * \param data  Data pointer to be passed to cfunc()
+ *
+ *  Depending on whether a Split VFO has been set, this method may either
+ *  resolve to the provided VFO, or the already set Split VFO.
+ * \internal
+ *
+ * \return always RIG_OK.
+ */
+int tmv71_resolve_vfo_for_split(RIG *rig, int for_split_action, vfo_t requested_vfo, vfo_t *resolved_vfo)
+{
+
+	char vfo_debug_name[14];
+	tmv71_resolve_vfo_name(requested_vfo, vfo_debug_name);
+	rig_debug(RIG_DEBUG_TRACE, "%s: called with split_action %d, requested_vfo %s\n",
+			  __func__, for_split_action, vfo_debug_name);
+
+	if (tmv71_state.split_mode_active == RIG_SPLIT_ON)
+	{
+		rig_debug(RIG_DEBUG_TRACE, "%s: satmode is enabled.  use tmv71_state.vfo_(t|r)x\n",
+				  __func__);
+
+		*resolved_vfo = (for_split_action)
+							? tmv71_state.vfo_tx
+							: tmv71_state.vfo_rx;
+	}
+	else{
+		*resolved_vfo = requested_vfo;
+	}
+
+	tmv71_resolve_vfo_name(*resolved_vfo, vfo_debug_name);
+	rig_debug(RIG_DEBUG_TRACE, "%s: resolved vfo to %s\n",
+			  __func__, vfo_debug_name);
+
+	return RIG_OK;
 }
 
 /*
@@ -1017,7 +1087,10 @@ int tmv71_set_freq(RIG *rig, vfo_t vfo, freq_t freq)
 
 	rig_debug(RIG_DEBUG_TRACE, "%s: RIG_VFO_CURRENT: %d)\n", __func__, RIG_VFO_CURR);
 
-	return tmv71_do_set_freq(rig, vfo, freq);
+	vfo_t split_vfo;
+	tmv71_resolve_vfo_for_split(rig, 0, vfo, &split_vfo);
+
+	return tmv71_do_set_freq(rig, split_vfo, freq);
 }
 
 /*
@@ -1028,7 +1101,10 @@ int tmv71_get_freq(RIG *rig, vfo_t vfo, freq_t *freq)
 {
 	rig_debug(RIG_DEBUG_TRACE, "%s: called for vfo: %d)\n", __func__, vfo);
 
-	return tmv71_do_get_freq(rig, vfo, freq);
+	vfo_t resolved_vfo;
+	tmv71_resolve_vfo_for_split(rig, 0, vfo, &resolved_vfo);
+
+	return tmv71_do_get_freq(rig, resolved_vfo, freq);
 }
 
 /*
@@ -1039,10 +1115,10 @@ int tmv71_set_split_freq(RIG *rig, vfo_t vfo, freq_t freq)
 {
 	rig_debug(RIG_DEBUG_TRACE, "%s: called for vfo: %d, at %f)\n", __func__, vfo, freq);
 
-	int channel;
-	tmv71_vfo_to_channel(rig, rig->state.tx_vfo, &channel);
+	vfo_t resolved_vfo;
+	tmv71_resolve_vfo_for_split(rig, 1, vfo, &resolved_vfo);
 
-	return tmv71_do_set_freq(rig, channel, freq);
+	return tmv71_do_set_freq(rig, resolved_vfo, freq);
 }
 
 /*
@@ -1053,10 +1129,10 @@ int tmv71_get_split_freq(RIG *rig, vfo_t vfo, freq_t *freq)
 {
 	rig_debug(RIG_DEBUG_TRACE, "%s: called for vfo: %d)\n", __func__, vfo);
 
-	int channel;
-	tmv71_vfo_to_channel(rig, rig->state.tx_vfo, &channel);
+	vfo_t resolved_vfo;
+	tmv71_resolve_vfo_for_split(rig, 1, vfo, &resolved_vfo);
 
-	return tmv71_do_get_freq(rig, channel, freq);
+	return tmv71_do_get_freq(rig, resolved_vfo, freq);
 }
 
 int tmv71_set_ptt(RIG *rig, vfo_t vfo, ptt_t ptt)
@@ -1080,8 +1156,12 @@ int tmv71_set_ptt(RIG *rig, vfo_t vfo, ptt_t ptt)
  */
 int tmv71_set_mode(RIG *rig, vfo_t vfo, rmode_t mode, pbwidth_t width)
 {
+
+	vfo_t resolved_vfo;
+	tmv71_resolve_vfo_for_split(rig, 0, vfo, &resolved_vfo);
+
 	int channel;
-	tmv71_vfo_to_channel(rig, rig->state.tx_vfo, &channel);
+	tmv71_vfo_to_channel(rig, resolved_vfo, &channel);
 
 	rig_debug(RIG_DEBUG_TRACE, "%s: called for channel %d with: %lu\n",
 			  __func__, channel, mode);
@@ -1101,8 +1181,11 @@ int tmv71_get_mode(RIG *rig, vfo_t vfo, rmode_t *mode, pbwidth_t *width)
 {
 	rig_debug(RIG_DEBUG_TRACE, "%s: called\n", __func__);
 
+	vfo_t resolved_vfo;
+	tmv71_resolve_vfo_for_split(rig, 0, vfo, &resolved_vfo);
+
 	int channel;
-	tmv71_vfo_to_channel(rig, vfo, &channel);
+	tmv71_vfo_to_channel(rig, resolved_vfo, &channel);
 
 	struct tmv71_me me_struct;
 	int retval = rig_pull_me(rig, channel, &me_struct);
@@ -1607,19 +1690,37 @@ int tmv71_get_vfo(RIG *rig, vfo_t *vfo){
  *
  *	This radio has two VFOs, and either one can be the TX/RX.  As such, this function does two things:
  *	- Sets PTT control on the specified VFO.
- *	- Sets the TX_VFO and RX_VFO for use in Set_Freq and Set_Split_Freq
- *	- The value of split is ignored, as the radio is always in "split" mode.
+ *	- If "Split" is enabled, sets the TX_VFO and RX_VFO for use in Set_Freq and Set_Split_Freq
+ *	
  *
  */
 int tmv71_set_split_vfo(RIG *rig, vfo_t vfo, split_t split, vfo_t txvfo)
 {
+	char vfo_debug_name[14];
+	tmv71_resolve_vfo_name(txvfo, vfo_debug_name);
+	rig_debug(RIG_DEBUG_TRACE, "%s: called with split %d, vfo %s\n",
+			  __func__, split, vfo_debug_name);
+
 	int retval = rig_push_bc(rig, txvfo, txvfo);
+	if( retval != RIG_OK)
 	{
 		return retval;
 	}
 
-	rig->state.tx_vfo = txvfo;
-	rig->state.rx_vfo = txvfo == RIG_VFO_A ? RIG_VFO_B : RIG_VFO_A;
+	if (split == RIG_SPLIT_ON) {
+		tmv71_state.vfo_tx = txvfo;
+		tmv71_state.vfo_rx = txvfo == RIG_VFO_A ? RIG_VFO_B : RIG_VFO_A;
+		tmv71_state.split_mode_active = RIG_SPLIT_ON;
+
+		char vfo_debug_tx[14], vfo_debug_rx[14];
+		tmv71_resolve_vfo_name(tmv71_state.vfo_tx, vfo_debug_tx);
+		tmv71_resolve_vfo_name(tmv71_state.vfo_rx, vfo_debug_rx);
+		rig_debug(RIG_DEBUG_TRACE, "%s: Set split VFOs TX: %s, RX: %s\n",
+				  __func__, vfo_debug_tx, vfo_debug_rx);
+	}
+	else{
+		tmv71_state.split_mode_active = RIG_SPLIT_OFF;
+	}
 
 	return RIG_OK;
 }
@@ -1627,7 +1728,7 @@ int tmv71_set_split_vfo(RIG *rig, vfo_t vfo, split_t split, vfo_t txvfo)
 int tmv71_get_split_vfo(RIG *rig, vfo_t vfo, split_t *split, vfo_t *txvfo)
 {
 
-	*txvfo = rig->state.tx_vfo;
+	*txvfo = tmv71_state.vfo_tx;
 
 	//The following is just sanity checking.
 
@@ -1638,7 +1739,7 @@ int tmv71_get_split_vfo(RIG *rig, vfo_t vfo, split_t *split, vfo_t *txvfo)
 		return retval;
 	}
 
-	if (ptt != rig->state.tx_vfo)
+	if (ptt != tmv71_state.vfo_tx)
 	{
 		//Hmmm, we have a problem.  The operator has manually switched the 
 		//	TX vfo so we are in an inconsistent state.  As this is a GET call,

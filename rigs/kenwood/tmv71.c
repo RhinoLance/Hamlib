@@ -76,6 +76,7 @@ static int tmv71_set_channel(RIG *rig, vfo_t vfo, const channel_t *chan);
 static int tmv71_get_channel(RIG *rig, vfo_t vfo, channel_t *chan, int read_only);
 static int tmv71_set_ptt(RIG *rig, vfo_t vfo, ptt_t ptt);
 static int tmv71_get_dcd(RIG *rig, vfo_t vfo, dcd_t *dcd);
+
 /*
 static int tmv71_set_rptr_shift(RIG *rig, vfo_t vfo, rptr_shift_t shift);
 static int tmv71_get_rptr_shift(RIG *rig, vfo_t vfo, rptr_shift_t* shift);
@@ -92,11 +93,13 @@ static int tmv71_get_ext_level(RIG *rig, vfo_t vfo, token_t token, value_t *val)
 static int tmv71_set_ext_level(RIG *rig, vfo_t vfo, token_t token, value_t val);
 */
 
+static int rig_pull_bc(RIG *rig, vfo_t *ctrl, vfo_t *ptt);
+
 // Rig capabilities
 
-#define tmv71_MODES (RIG_MODE_FM | RIG_MODE_FMN | RIG_MODE_AM)
-#define tmv71_MODES_FM (RIG_MODE_FM | RIG_MODE_FMN)
-#define tmv71_MODES_TX (RIG_MODE_FM | RIG_MODE_FMN)
+#define tmv71_MODE_LIST (RIG_MODE_FM | RIG_MODE_FMN | RIG_MODE_AM)
+#define tmv71_MODE_LIST_FM (RIG_MODE_FM | RIG_MODE_FMN)
+#define tmv71_MODE_LIST_TX (RIG_MODE_FM | RIG_MODE_FMN)
 
 #define tmv71_FUNC_GET (RIG_FUNC_TSQL | \
 						RIG_FUNC_TONE | \
@@ -142,6 +145,7 @@ static int tmv71_set_ext_level(RIG *rig, vfo_t vfo, token_t token, value_t val);
 
 #define tmv71_BAND_A 0
 #define tmv71_BAND_B 1
+#define tmv71_BAND_UNKNOWN 2
 #define tmv71_BAND_A_CHANNEL 998
 #define tmv71_BAND_B_CHANNEL 999
 
@@ -156,15 +160,17 @@ static int tmv71_set_ext_level(RIG *rig, vfo_t vfo, token_t token, value_t val);
 #define tmv71_SQL_MIN 0
 #define tmv71_SQL_MAX 0x1F
 
-static rmode_t tmv71_mode_table[KENWOOD_MODE_TABLE_MAX] = {
-	[0] = RIG_MODE_FM,
-	[1] = RIG_MODE_FMN,
-	[2] = RIG_MODE_AM,
-};
+#define tmv71_MODE_FM 0
+#define tmv71_MODE_NFM 1
+#define tmv71_MODE_AM 2
+
+#define tmv71_MODE_FM_PASSBAND 15000
+#define tmv71_MODE_NFM_PASSBAND 5000
+#define tmv71_MODE_AM_PASSBAND 4000
 
 static struct kenwood_priv_caps tmv71_priv_caps = {
 	.cmdtrm = EOM_TH, /* Command termination character */
-	.mode_table = tmv71_mode_table,
+	//.mode_table = tmv71_mode_table,
 };
 
 const struct rig_caps tmv71_caps = {
@@ -225,43 +231,43 @@ const struct rig_caps tmv71_caps = {
 	 * TODO: Japan & TM-D700S, and Taiwan models
 	 */
 	.rx_range_list1 = {
-		{MHz(118), MHz(470), tmv71_MODES, -1, -1, RIG_VFO_A | RIG_VFO_MEM},
-		{MHz(136), MHz(174), tmv71_MODES_FM, -1, -1, RIG_VFO_A | RIG_VFO_B | RIG_VFO_MEM},
-		{MHz(300), MHz(524), tmv71_MODES_FM, -1, -1, RIG_VFO_A | RIG_VFO_B | RIG_VFO_MEM},
-		{MHz(800), MHz(1300), tmv71_MODES_FM, -1, -1, RIG_VFO_B | RIG_VFO_MEM},
+		{MHz(118), MHz(470), tmv71_MODE_LIST, -1, -1, RIG_VFO_A | RIG_VFO_MEM},
+		{MHz(136), MHz(174), tmv71_MODE_LIST_FM, -1, -1, RIG_VFO_A | RIG_VFO_B | RIG_VFO_MEM},
+		{MHz(300), MHz(524), tmv71_MODE_LIST_FM, -1, -1, RIG_VFO_A | RIG_VFO_B | RIG_VFO_MEM},
+		{MHz(800), MHz(1300), tmv71_MODE_LIST_FM, -1, -1, RIG_VFO_B | RIG_VFO_MEM},
 		RIG_FRNG_END,
 	}, /* rx range */
 	.tx_range_list1 = {
-		{MHz(144), MHz(146), tmv71_MODES_TX, W(5), W(50), RIG_VFO_A | RIG_VFO_B | RIG_VFO_MEM},
-		{MHz(430), MHz(440), tmv71_MODES_TX, W(5), W(35), RIG_VFO_A | RIG_VFO_B | RIG_VFO_MEM},
+		{MHz(144), MHz(146), tmv71_MODE_LIST_TX, W(5), W(50), RIG_VFO_A | RIG_VFO_B | RIG_VFO_MEM},
+		{MHz(430), MHz(440), tmv71_MODE_LIST_TX, W(5), W(35), RIG_VFO_A | RIG_VFO_B | RIG_VFO_MEM},
 		RIG_FRNG_END,
 	}, /* tx range */
 
 	.rx_range_list2 = {
-		{MHz(118), MHz(470), tmv71_MODES, -1, -1, RIG_VFO_A | RIG_VFO_MEM},
-		{MHz(136), MHz(174), tmv71_MODES_FM, -1, -1, RIG_VFO_A | RIG_VFO_B | RIG_VFO_MEM},
-		{MHz(300), MHz(524), tmv71_MODES_FM, -1, -1, RIG_VFO_A | RIG_VFO_B | RIG_VFO_MEM},
-		{MHz(800), MHz(1300), tmv71_MODES_FM, -1, -1, RIG_VFO_B | RIG_VFO_MEM}, /* TODO: cellular blocked */
+		{MHz(118), MHz(470), tmv71_MODE_LIST, -1, -1, RIG_VFO_A | RIG_VFO_MEM},
+		{MHz(136), MHz(174), tmv71_MODE_LIST_FM, -1, -1, RIG_VFO_A | RIG_VFO_B | RIG_VFO_MEM},
+		{MHz(300), MHz(524), tmv71_MODE_LIST_FM, -1, -1, RIG_VFO_A | RIG_VFO_B | RIG_VFO_MEM},
+		{MHz(800), MHz(1300), tmv71_MODE_LIST_FM, -1, -1, RIG_VFO_B | RIG_VFO_MEM}, /* TODO: cellular blocked */
 		RIG_FRNG_END,
 	}, /* rx range */
 	.tx_range_list2 = {
-		{MHz(144), MHz(148), tmv71_MODES_TX, W(5), W(50), RIG_VFO_A | RIG_VFO_B | RIG_VFO_MEM},
-		{MHz(430), MHz(450), tmv71_MODES_TX, W(5), W(35), RIG_VFO_A | RIG_VFO_B | RIG_VFO_MEM},
+		{MHz(144), MHz(148), tmv71_MODE_LIST_TX, W(5), W(50), RIG_VFO_A | RIG_VFO_B | RIG_VFO_MEM},
+		{MHz(430), MHz(450), tmv71_MODE_LIST_TX, W(5), W(35), RIG_VFO_A | RIG_VFO_B | RIG_VFO_MEM},
 		RIG_FRNG_END,
 	}, /* tx range */
 
 	.tuning_steps = {
-		{tmv71_MODES, kHz(5)},
-		{tmv71_MODES, kHz(6.25)},
-		{tmv71_MODES, kHz(8.33)},
-		{tmv71_MODES, kHz(10)},
-		{tmv71_MODES, kHz(12.5)},
-		{tmv71_MODES, kHz(15)},
-		{tmv71_MODES, kHz(20)},
-		{tmv71_MODES, kHz(25)},
-		{tmv71_MODES, kHz(30)},
-		{tmv71_MODES, kHz(50)},
-		{tmv71_MODES, kHz(100)},
+		{tmv71_MODE_LIST, kHz(5)},
+		{tmv71_MODE_LIST, kHz(6.25)},
+		{tmv71_MODE_LIST, kHz(8.33)},
+		{tmv71_MODE_LIST, kHz(10)},
+		{tmv71_MODE_LIST, kHz(12.5)},
+		{tmv71_MODE_LIST, kHz(15)},
+		{tmv71_MODE_LIST, kHz(20)},
+		{tmv71_MODE_LIST, kHz(25)},
+		{tmv71_MODE_LIST, kHz(30)},
+		{tmv71_MODE_LIST, kHz(50)},
+		{tmv71_MODE_LIST, kHz(100)},
 		RIG_TS_END,
 	},
 	/* mode/filter list, remember: order matters! */
@@ -364,13 +370,6 @@ struct tmv71_me
 	int lockout;	 // P16
 };
 
-/* structure for handling VM radio commands */
-struct tmv71_vm
-{
-	int band;	 // P1
-	int mode;	 // P2
-};
-
 /* structure for handling BC radio commands */
 struct tmv71_bc
 {
@@ -406,9 +405,146 @@ static int tmv71_open(RIG *rig)
 	return 0;
 }
 
-static int tmv71_vfo_to_channel(vfo_t vfo){
+static int tmv71_transform_band_to_vfo(int band){
+	return band == tmv71_BAND_A ? RIG_VFO_A : RIG_VFO_B;
+};
+
+static int tmv71_transform_vfo_to_band(int vfo)
+{
+	if( vfo == RIG_VFO_A ) return tmv71_BAND_A;
+	if (vfo == RIG_VFO_B) return tmv71_BAND_B;
+	
+	return tmv71_BAND_UNKNOWN;
+};
+
+int tmv71_transform_rptr_shift_from_hamlib(rptr_shift_t shift, int *tmv71_shift)
+{
+	switch (shift)
+	{
+	case RIG_RPT_SHIFT_NONE:
+		*tmv71_shift = 0;
+		break;
+	case RIG_RPT_SHIFT_PLUS:
+		*tmv71_shift = 1;
+		break;
+	case RIG_RPT_SHIFT_MINUS:
+		*tmv71_shift = 2;
+		break;
+	default:
+		rig_debug(RIG_DEBUG_ERR, "%s: Unexpected shift value '%d'\n", __func__, shift);
+		return -RIG_EPROTO;
+	}
+
+	return RIG_OK;
+}
+
+int tmv71_transform_rptr_shift_to_hamlib(int radio_shift, rptr_shift_t *shift)
+{
+	switch (radio_shift)
+	{
+	case 0:
+		*shift = RIG_RPT_SHIFT_NONE;
+		break;
+	case 1:
+		*shift = RIG_RPT_SHIFT_PLUS;
+		break;
+	case 2:
+		*shift = RIG_RPT_SHIFT_MINUS;
+		break;
+	default:
+		rig_debug(RIG_DEBUG_ERR, "%s: Unexpected shift value '%d'\n", __func__, radio_shift);
+		return -RIG_EPROTO;
+	}
+
+	return RIG_OK;
+}
+
+static int tmv71_trasform_mode_to_hamlib(int src_mode, rmode_t *target_mode, pbwidth_t *width)
+{
+	switch (src_mode)
+	{
+	case tmv71_MODE_FM:
+		*target_mode = RIG_MODE_WFM;
+		*width = tmv71_MODE_FM_PASSBAND;
+		break;
+	case tmv71_MODE_NFM:
+		*target_mode = RIG_MODE_FM;
+		*width = tmv71_MODE_NFM_PASSBAND;
+		break;
+	case tmv71_MODE_AM:
+		*target_mode = RIG_MODE_AM;
+		*width = tmv71_MODE_AM_PASSBAND;
+		break;
+	default:
+		rig_debug(RIG_DEBUG_ERR, "%s: Illegal value from radio '%ld'\n", __func__, (long)src_mode);
+		return -RIG_EINVAL;
+	}
+
+	return RIG_OK;
+}
+
+static int tmv71_trasform_mode_from_hamlib(rmode_t src_mode, int *target_mode)
+{
+
+	switch (src_mode)
+	{
+	case RIG_MODE_WFM:
+		*target_mode = tmv71_MODE_FM;
+		break;
+
+	case RIG_MODE_FM:
+	case RIG_MODE_FMN:
+		*target_mode = tmv71_MODE_NFM;
+		break;
+
+	case RIG_MODE_AM:
+		*target_mode = tmv71_MODE_AM;
+		break;
+
+	default:
+		rig_debug(RIG_DEBUG_ERR, "%s: Illegal value from hamlib '%ld'\n", __func__, (long)src_mode);
+		return -RIG_EINVAL;
+	}
+
+	return RIG_OK;
+}
+
+static int tmv71_vfo_to_channel(RIG *rig, vfo_t vfo, int *channel){
 	rig_debug(RIG_DEBUG_TRACE, "%s: called with vfo: %d\n", __func__, vfo);
-	return (vfo = tmv71_BAND_A) ? tmv71_BAND_A_CHANNEL : tmv71_BAND_B_CHANNEL;
+
+	rig_debug(RIG_DEBUG_TRACE, "%s: RIG_VFO_A: %d, RIG_VFO_B %d\n", __func__, RIG_VFO_A, RIG_VFO_B);
+
+	vfo_t ctrl, ptt;
+	int retval;
+
+	switch( vfo ){
+		case RIG_VFO_A:
+			*channel = tmv71_BAND_A_CHANNEL;
+			rig_debug(RIG_DEBUG_TRACE, "%s: set channel: %d from vfo: %d\n",
+					  __func__, *channel, vfo);
+			break;
+		case RIG_VFO_B:
+			*channel = tmv71_BAND_B_CHANNEL;
+			rig_debug(RIG_DEBUG_TRACE, "%s: set channel: %d from vfo: %d\n",
+					  __func__, *channel, vfo);
+			break;
+		default:
+			
+			retval = rig_pull_bc(rig, &ctrl, &ptt);
+
+			if( retval != RIG_OK){
+				*channel = tmv71_BAND_A_CHANNEL;
+				rig_debug(RIG_DEBUG_WARN, "%s - Unable to resolve current VFO. \
+					Falling back to RIG_VFO_A.\n", __func__);
+			}
+			else{
+				int radio_vfo = ctrl;
+				tmv71_vfo_to_channel(rig, radio_vfo, channel);
+			}
+			
+	}
+	
+	return RIG_OK;
 }
 
 static struct tmv71_me tmv71_get_update_me(){
@@ -496,12 +632,14 @@ int rig_push_me(RIG *rig, struct tmv71_me *me_struct)
 /*
  *	Get the band state of VFO/MEMORY
  */
-int rig_pull_vm(RIG *rig, int band, struct tmv71_vm *vm_struct)
+int rig_pull_vm(RIG *rig, vfo_t vfo, int *mode)
 {
+	rig_debug(RIG_DEBUG_TRACE, "%s: called\n", __func__);
+
+	int band = tmv71_transform_vfo_to_band(vfo);
+
 	char cmdbuf[80];
 	char buf[80];
-
-	rig_debug(RIG_DEBUG_TRACE, "%s: called\n", __func__);
 
 	snprintf(cmdbuf, sizeof(cmdbuf), "VM %1d", band);
 
@@ -512,8 +650,7 @@ int rig_pull_vm(RIG *rig, int band, struct tmv71_vm *vm_struct)
 		return retval;
 	}
 
-	retval = num_sscanf(buf, "ME %d,%d",
-						&vm_struct->band, &vm_struct->mode);
+	retval = num_sscanf(buf, "VM %d,%d", &band, mode);
 
 	if (retval != 2)
 	{
@@ -527,15 +664,17 @@ int rig_pull_vm(RIG *rig, int band, struct tmv71_vm *vm_struct)
 /*
  *	Set the band to VFO/MEMORY
  */
-int rig_push_vm(RIG *rig, struct tmv71_vm *vm_struct)
+int rig_push_vm(RIG *rig, vfo_t vfo, int mode)
 {
+	rig_debug(RIG_DEBUG_TRACE, "%s: called\n", __func__);
+
+	int band = tmv71_transform_vfo_to_band(vfo);
+
 	char cmdbuf[80];
 	char buf[80];
 
-	rig_debug(RIG_DEBUG_TRACE, "%s: called\n", __func__);
-
 	snprintf(cmdbuf, sizeof(cmdbuf), "VM %1d,%1d",
-			 vm_struct->band, vm_struct->mode);
+			 band, mode);
 
 	return kenwood_transaction(rig, cmdbuf, buf, sizeof(buf));
 }
@@ -543,7 +682,7 @@ int rig_push_vm(RIG *rig, struct tmv71_vm *vm_struct)
 /*
  *	Get the CTRL and PTT.
  */
-int rig_pull_bc(RIG *rig, struct tmv71_bc *bc_struct)
+int rig_pull_bc(RIG *rig, vfo_t *ctrl, vfo_t *ptt)
 {
 	rig_debug(RIG_DEBUG_TRACE, "%s: called\n", __func__);
 
@@ -560,8 +699,12 @@ int rig_pull_bc(RIG *rig, struct tmv71_bc *bc_struct)
 		return retval;
 	}
 
-	retval = num_sscanf(buf, "BC %d,%d",
-						&bc_struct->ctrl, &bc_struct->ptt);
+	int band_ctrl, band_ptt;
+
+	retval = num_sscanf(buf, "BC %d,%d", &band_ctrl, &band_ptt);
+
+	*ctrl = tmv71_transform_band_to_vfo(band_ctrl);
+	*ptt = tmv71_transform_band_to_vfo(band_ptt);
 
 	if (retval != 2)
 	{
@@ -575,16 +718,20 @@ int rig_pull_bc(RIG *rig, struct tmv71_bc *bc_struct)
 /*
  *	Set the CTRL and PTT.
  */
-int rig_push_bc(RIG *rig, struct tmv71_bc *bc_struct)
+int rig_push_bc(RIG *rig, vfo_t ctrl, vfo_t ptt)
 {
-	rig_debug(RIG_DEBUG_TRACE, "%s - called to set CRTL to: %d and PTT to: %d\n", 
-		__func__, bc_struct->ctrl, bc_struct->ptt);
+	int band_ctrl = tmv71_transform_vfo_to_band(ctrl);
+	int band_ptt = tmv71_transform_vfo_to_band(ptt);
+	
+
+	rig_debug(RIG_DEBUG_TRACE, "%s - called to set VFOs(bands) CRTL to: %d(%d) and PTT to: %d(%d)\n",
+			  __func__, ctrl, band_ctrl, ptt, band_ptt);
 
 	char cmdbuf[80];
 	char buf[80];
 
 	snprintf(cmdbuf, sizeof(cmdbuf), "BC %1d,%1d",
-			 bc_struct->ctrl, bc_struct->ptt);
+			 band_ctrl, band_ptt);
 
 	return kenwood_transaction(rig, cmdbuf, buf, sizeof(buf));
 }
@@ -592,12 +739,14 @@ int rig_push_bc(RIG *rig, struct tmv71_bc *bc_struct)
 /*
  *	Get the current memory channel number set to the band
  */
-int rig_pull_mr(RIG *rig, int band, int *channel)
+int rig_pull_mr(RIG *rig, vfo_t vfo, int *channel)
 {
-	char cmdbuf[80];
-	char buf[80];
+	int band = tmv71_transform_vfo_to_band(vfo);
 
 	rig_debug(RIG_DEBUG_TRACE, "%s - called for band %d\n", __func__, band);
+
+	char cmdbuf[80];
+	char buf[80];
 
 	snprintf(cmdbuf, sizeof(cmdbuf), "MR %d", band);
 
@@ -625,12 +774,15 @@ int rig_pull_mr(RIG *rig, int band, int *channel)
 /*
  *	Set the band to a given memory channel
  */
-int rig_push_mr(RIG *rig, int band, int channel)
+int rig_push_mr(RIG *rig, vfo_t vfo, int channel)
 {
+
+	int band = tmv71_transform_vfo_to_band(vfo);
+
+	rig_debug(RIG_DEBUG_TRACE, "%s - called for band: %d, channel %d\n", __func__, band, channel);
+
 	char cmdbuf[80];
 	char buf[80];
-
-	rig_debug(RIG_DEBUG_TRACE, "%s: called\n", __func__);
 
 	snprintf(cmdbuf, sizeof(cmdbuf), "MR %d,%d",
 			 band, channel);
@@ -817,7 +969,8 @@ struct tmv71_stepFreq tmv71_resolve_supported_freq(int freq)
  */
 int tmv71_do_set_freq(RIG *rig, vfo_t vfo, freq_t freq)
 {
-	int channel = tmv71_vfo_to_channel(vfo);
+	int channel;
+	tmv71_vfo_to_channel(rig, vfo, &channel);
 
 	rig_debug(RIG_DEBUG_TRACE, "%s: called for channel %d with freq %f\n",
 			  __func__, channel, freq);
@@ -838,7 +991,8 @@ int tmv71_do_set_freq(RIG *rig, vfo_t vfo, freq_t freq)
  */
 int tmv71_do_get_freq(RIG *rig, vfo_t vfo, freq_t *freq)
 {
-	int channel = tmv71_vfo_to_channel(vfo);
+	int channel;
+	tmv71_vfo_to_channel(rig, vfo, &channel);
 
 	rig_debug(RIG_DEBUG_TRACE, "%s: called for channel: %d)\n", __func__, channel);
 
@@ -859,7 +1013,9 @@ int tmv71_do_get_freq(RIG *rig, vfo_t vfo, freq_t *freq)
  */
 int tmv71_set_freq(RIG *rig, vfo_t vfo, freq_t freq)
 {
-	rig_debug(RIG_DEBUG_TRACE, "%s: called\n", __func__);
+	rig_debug(RIG_DEBUG_TRACE, "%s: called for vfo: %d, at %f)\n", __func__, vfo, freq);
+
+	rig_debug(RIG_DEBUG_TRACE, "%s: RIG_VFO_CURRENT: %d)\n", __func__, RIG_VFO_CURR);
 
 	return tmv71_do_set_freq(rig, vfo, freq);
 }
@@ -870,7 +1026,7 @@ int tmv71_set_freq(RIG *rig, vfo_t vfo, freq_t freq)
  */
 int tmv71_get_freq(RIG *rig, vfo_t vfo, freq_t *freq)
 {
-	rig_debug(RIG_DEBUG_TRACE, "%s: called\n", __func__);
+	rig_debug(RIG_DEBUG_TRACE, "%s: called for vfo: %d)\n", __func__, vfo);
 
 	return tmv71_do_get_freq(rig, vfo, freq);
 }
@@ -881,9 +1037,10 @@ int tmv71_get_freq(RIG *rig, vfo_t vfo, freq_t *freq)
  */
 int tmv71_set_split_freq(RIG *rig, vfo_t vfo, freq_t freq)
 {
-	rig_debug(RIG_DEBUG_TRACE, "%s: called\n", __func__);
+	rig_debug(RIG_DEBUG_TRACE, "%s: called for vfo: %d, at %f)\n", __func__, vfo, freq);
 
-	int channel = tmv71_vfo_to_channel(rig->state.rx_vfo);
+	int channel;
+	tmv71_vfo_to_channel(rig, rig->state.tx_vfo, &channel);
 
 	return tmv71_do_set_freq(rig, channel, freq);
 }
@@ -894,9 +1051,10 @@ int tmv71_set_split_freq(RIG *rig, vfo_t vfo, freq_t freq)
  */
 int tmv71_get_split_freq(RIG *rig, vfo_t vfo, freq_t *freq)
 {
-	rig_debug(RIG_DEBUG_TRACE, "%s: called\n", __func__);
+	rig_debug(RIG_DEBUG_TRACE, "%s: called for vfo: %d)\n", __func__, vfo);
 
-	int channel = tmv71_vfo_to_channel(rig->state.rx_vfo);
+	int channel;
+	tmv71_vfo_to_channel(rig, rig->state.tx_vfo, &channel);
 
 	return tmv71_do_get_freq(rig, channel, freq);
 }
@@ -922,13 +1080,15 @@ int tmv71_set_ptt(RIG *rig, vfo_t vfo, ptt_t ptt)
  */
 int tmv71_set_mode(RIG *rig, vfo_t vfo, rmode_t mode, pbwidth_t width)
 {
-	int channel = tmv71_vfo_to_channel(vfo);
+	int channel;
+	tmv71_vfo_to_channel(rig, rig->state.tx_vfo, &channel);
 
 	rig_debug(RIG_DEBUG_TRACE, "%s: called for channel %d with: %lu\n",
 			  __func__, channel, mode);
 
 	struct tmv71_me me_struct = tmv71_get_update_me();
-	me_struct.mode = mode;
+
+	tmv71_trasform_mode_from_hamlib( mode, &me_struct.mode);
 
 	return tmv71_update_memory_channel(rig, channel, &me_struct);
 }
@@ -941,15 +1101,18 @@ int tmv71_get_mode(RIG *rig, vfo_t vfo, rmode_t *mode, pbwidth_t *width)
 {
 	rig_debug(RIG_DEBUG_TRACE, "%s: called\n", __func__);
 
+	int channel;
+	tmv71_vfo_to_channel(rig, vfo, &channel);
+
 	struct tmv71_me me_struct;
-	int retval = rig_pull_me(rig, tmv71_vfo_to_channel(vfo), &me_struct);
+	int retval = rig_pull_me(rig, channel, &me_struct);
 
 	if (retval != RIG_OK)
 	{
 		return retval;
 	}
 
-	*mode = me_struct.mode;
+	tmv71_trasform_mode_to_hamlib(me_struct.mode, mode, width);
 
 	return retval;
 }
@@ -998,7 +1161,8 @@ int tmv71_get_mem(RIG *rig, vfo_t vfo, int *channel)
  */
 int tmv71_set_ts(RIG *rig, vfo_t vfo, shortfreq_t step)
 {
-	int channel = tmv71_vfo_to_channel(vfo);
+	int channel;
+	tmv71_vfo_to_channel(rig, vfo, &channel);
 
 	rig_debug(RIG_DEBUG_TRACE, "%s: called for channel %d with: %ld\n",
 			  __func__, channel, step);
@@ -1018,8 +1182,11 @@ int tmv71_get_ts(RIG *rig, vfo_t vfo, shortfreq_t *step)
 {
 	rig_debug(RIG_DEBUG_TRACE, "%s: called\n", __func__);
 
+	int channel;
+	tmv71_vfo_to_channel(rig, vfo, &channel);
+
 	struct tmv71_me me_struct;
-	int retval = rig_pull_me(rig, tmv71_vfo_to_channel(vfo), &me_struct);
+	int retval = rig_pull_me(rig, channel, &me_struct);
 
 	if (retval != RIG_OK)
 	{
@@ -1098,8 +1265,11 @@ int tmv71_code_to_tone(enum tmv71_tone_type type, tone_t code, tone_t *tone)
 
 int tmv71_do_get_tone(RIG *rig, vfo_t vfo, enum tmv71_tone_type type, tone_t *tone)
 {
+	int channel;
+	tmv71_vfo_to_channel(rig, vfo, &channel);
+
 	struct tmv71_me me_struct;
-	int retval = rig_pull_me(rig, tmv71_vfo_to_channel(vfo), &me_struct);
+	int retval = rig_pull_me(rig, channel, &me_struct);
 	if(retval != RIG_OK){
 		return retval;
 	}
@@ -1172,7 +1342,10 @@ int tmv71_do_set_tone(RIG *rig, vfo_t vfo, enum tmv71_tone_type type, tone_t ton
 
 	tmv71_tone_to_code(tone_type, tone, &tone_code);
 
-	return tmv71_update_memory_channel(rig, tmv71_vfo_to_channel(vfo), &me_struct);
+	int channel;
+	tmv71_vfo_to_channel(rig, vfo, &channel);
+
+	return tmv71_update_memory_channel(rig, channel, &me_struct);
 }
 
 /*
@@ -1289,52 +1462,49 @@ int tmv71_create_clean_memory_channel(RIG *rig, int channel)
 	return retval;
 }
 
-int tmv71_get_current_band(RIG *rig, int *ctrl, int *ptt){
+int tmv71_get_current_vfo(RIG *rig, vfo_t *ctrl, vfo_t *ptt){
 
 	rig_debug(RIG_DEBUG_VERBOSE, "%s called\n", __func__);
 
-	struct tmv71_bc bc_struct;
-	int retval = rig_pull_bc(rig, &bc_struct);
+	int retval = rig_pull_bc(rig, ctrl, ptt);
 	if (retval != RIG_OK)
 	{
 		rig_debug(RIG_DEBUG_VERBOSE, "rig_pull_bc failed with %d\n", retval);
 		return retval;
 	}
 
-	rig_debug(RIG_DEBUG_VERBOSE, "rig_pull_bc returned band: %d, ptt: %d\n", bc_struct.ctrl, bc_struct.ptt);
-
-	*ctrl = bc_struct.ctrl;
-	*ptt = bc_struct.ptt;
-
-	return 0;
+	rig_debug(RIG_DEBUG_TRACE, "%s - returned ctrl: %d, ptt: %d\n", __func__, *ctrl, *ptt);
+	
+	return RIG_OK;
 }
 
 int tmv71_set_vfo(RIG *rig, vfo_t vfo)
 {
 	rig_debug(RIG_DEBUG_VERBOSE, "%s called with vfo of: %d\n", __func__, vfo);
 
-	int band, ptt, channel, retval;
+	int channel, retval;
+	vfo_t ctrl, ptt;
 
 	channel = 0;
+	ctrl = vfo;
 
 	switch(vfo){
 		case RIG_VFO_A:
 		case RIG_VFO_VFO:
-			band = tmv71_BAND_A;
 			channel = tmv71_BAND_A_CHANNEL;
 			break;
 		case RIG_VFO_B:
-			band = tmv71_BAND_B;
 			channel = tmv71_BAND_B_CHANNEL;
 			break;
 		case RIG_VFO_MEM:
 			
 			// get current band
-			retval = tmv71_get_current_band(rig, &band, &ptt);
+			retval = tmv71_get_current_vfo(rig, &ctrl, &ptt);
 			if (retval != RIG_OK)
 			{
 				return retval;
 			}
+
 			break;
 		default:
 			rig_debug(RIG_DEBUG_ERR, "%s: Unsupported VFO %d\n", __func__, vfo);
@@ -1342,11 +1512,7 @@ int tmv71_set_vfo(RIG *rig, vfo_t vfo)
 	}
 
 	// We always operate in memory mode, so set the band to memory.
-	struct tmv71_vm vm_struct;
-	vm_struct.band = band;
-	vm_struct.mode = tmv71_BAND_MODE_MEMORY;
-	
-	retval = rig_push_vm(rig, &vm_struct);
+	retval = rig_push_vm(rig, ctrl, tmv71_BAND_MODE_MEMORY);
 	if (retval != RIG_OK)
 	{
 		return retval;
@@ -1361,7 +1527,7 @@ int tmv71_set_vfo(RIG *rig, vfo_t vfo)
 		if (retval != RIG_OK)
 		{
 			rig_debug(RIG_DEBUG_VERBOSE, "%s - No psudo vfo.  \
-					Creating channel: %d\n", __func__, vfo);
+					Creating channel: %d\n", __func__, ctrl);
 
 			// no channel, let's create one.
 			retval = tmv71_create_clean_memory_channel(rig, channel);
@@ -1372,19 +1538,14 @@ int tmv71_set_vfo(RIG *rig, vfo_t vfo)
 		}
 
 		// set the channel
-		retval = rig_push_mr(rig, band, channel);
+		retval = rig_push_mr(rig, ctrl, channel);
 		if (retval != RIG_OK)
 		{
 			return retval;
 		}
 	}
 
-	// Make it the active VFO
-	struct tmv71_bc bc_struct;
-	bc_struct.ctrl = band;
-	bc_struct.ptt = band;
-
-	retval = rig_push_bc(rig, &bc_struct);
+	retval = rig_push_bc(rig, ctrl, ctrl);
 	if (retval != RIG_OK)
 	{
 		return retval;
@@ -1398,15 +1559,15 @@ int tmv71_get_vfo(RIG *rig, vfo_t *vfo){
 	rig_debug(RIG_DEBUG_VERBOSE, "%s called\n", __func__);
 
 	// get current band
-	int band, ptt;
-	int retval = tmv71_get_current_band(rig, &band, &ptt);
+	vfo_t band, ptt;
+	int retval = tmv71_get_current_vfo(rig, &band, &ptt);
 	if (retval != RIG_OK)
 	{
-		rig_debug(RIG_DEBUG_VERBOSE, "%s - tmv71_get_current_band failed with %d\n", __func__, retval);
+		rig_debug(RIG_DEBUG_VERBOSE, "%s - tmv71_get_current_vfo failed with %d\n", __func__, retval);
 		return retval;
 	}
 
-	rig_debug(RIG_DEBUG_VERBOSE, "%s - tmv71_get_current_band returned band: %d, ptt: %d\n", __func__, band, ptt);
+	rig_debug(RIG_DEBUG_VERBOSE, "%s - tmv71_get_current_vfo returned band: %d, ptt: %d\n", __func__, band, ptt);
 
 	//get the momory channel to know if it's a psudo VFD
 	int channel;
@@ -1452,12 +1613,7 @@ int tmv71_get_vfo(RIG *rig, vfo_t *vfo){
  */
 int tmv71_set_split_vfo(RIG *rig, vfo_t vfo, split_t split, vfo_t txvfo)
 {
-	int splitVfo = txvfo == RIG_VFO_A ? 0 : 1;
-	struct tmv71_bc bc_struct;
-	bc_struct.ctrl = splitVfo;
-	bc_struct.ptt = splitVfo;
-
-	int retval = rig_push_bc(rig, &bc_struct);
+	int retval = rig_push_bc(rig, txvfo, txvfo);
 	{
 		return retval;
 	}
@@ -1475,16 +1631,14 @@ int tmv71_get_split_vfo(RIG *rig, vfo_t vfo, split_t *split, vfo_t *txvfo)
 
 	//The following is just sanity checking.
 
-	int band, ptt;
-	int retval = tmv71_get_current_band(rig, &band, &ptt);
+	vfo_t band, ptt;
+	int retval = tmv71_get_current_vfo(rig, &band, &ptt);
 	if (retval != RIG_OK)
 	{
 		return retval;
 	}
 
-	int radioPtt = ptt == 0 ? RIG_VFO_A : RIG_VFO_B;
-
-	if (radioPtt != rig->state.tx_vfo)
+	if (ptt != rig->state.tx_vfo)
 	{
 		//Hmmm, we have a problem.  The operator has manually switched the 
 		//	TX vfo so we are in an inconsistent state.  As this is a GET call,
@@ -1528,96 +1682,7 @@ static int tmv71_find_tuning_step_index(RIG *rig, shortfreq_t ts, int *step_inde
 	return RIG_OK;
 }
 
-int tmv71_transform_rptr_shift_from_hamlib(rptr_shift_t shift, int *tmv71_shift)
-{
-	switch (shift)
-	{
-	case RIG_RPT_SHIFT_NONE:
-		*tmv71_shift = 0;
-		break;
-	case RIG_RPT_SHIFT_PLUS:
-		*tmv71_shift = 1;
-		break;
-	case RIG_RPT_SHIFT_MINUS:
-		*tmv71_shift = 2;
-		break;
-	default:
-		rig_debug(RIG_DEBUG_ERR, "%s: Unexpected shift value '%d'\n", __func__, shift);
-		return -RIG_EPROTO;
-	}
 
-	return RIG_OK;
-}
-
-int tmv71_transform_rptr_shift_to_hamlib(int radio_shift, rptr_shift_t *shift)
-{
-	switch (radio_shift)
-	{
-	case 0:
-		*shift = RIG_RPT_SHIFT_NONE;
-		break;
-	case 1:
-		*shift = RIG_RPT_SHIFT_PLUS;
-		break;
-	case 2:
-		*shift = RIG_RPT_SHIFT_MINUS;
-		break;
-	default:
-		rig_debug(RIG_DEBUG_ERR, "%s: Unexpected shift value '%d'\n", __func__, radio_shift);
-		return -RIG_EPROTO;
-	}
-
-	return RIG_OK;
-}
-
-static int tmv71_trasform_mode_to_hamlib(int src_mode, rmode_t *target_mode, pbwidth_t *width)
-{
-	switch (src_mode)
-	{
-	case 0:
-		*target_mode = RIG_MODE_FM;
-		*width = 15000;
-		break;
-	case 1:
-		*target_mode = RIG_MODE_FMN;
-		*width = 5000;
-		break;
-	case 2:
-		*target_mode = RIG_MODE_AM;
-		*width = 4000;
-		break;
-	default:
-		rig_debug(RIG_DEBUG_ERR, "%s: Illegal value from radio '%ld'\n", __func__, (long)src_mode);
-		return -RIG_EINVAL;
-	}
-
-	return RIG_OK;
-}
-
-static int tmv71_trasform_mode_from_hamlib(rmode_t src_mode, int *target_mode)
-{
-
-	switch( src_mode )
-	{
-	case RIG_MODE_FM:
-		*target_mode = 0;
-		break;
-	
-	case RIG_MODE_FMN:
-		*target_mode = 1;
-		break;
-
-	case RIG_MODE_AM:
-		*target_mode = 2;
-		break;
-
-	default:
-		rig_debug(RIG_DEBUG_ERR, "%s: Illegal value from hamlib '%ld'\n", __func__, (long)src_mode);
-		return -RIG_EINVAL;
-	}
-
-	return RIG_OK;
-}
 
 int tmv71_set_channel(RIG *rig, vfo_t vfo, const channel_t *chan) {
 

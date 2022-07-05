@@ -170,7 +170,7 @@ static int rig_pull_bc(RIG *rig, vfo_t *ctrl, vfo_t *ptt);
 
 static struct kenwood_priv_caps tmv71_priv_caps = {
 	.cmdtrm = EOM_TH, /* Command termination character */
-	//.mode_table = tmv71_mode_table,
+					  //.mode_table = tmv71_mode_table,
 };
 
 const struct rig_caps tmv71_caps = {
@@ -1570,26 +1570,33 @@ int tmv71_set_vfo(RIG *rig, vfo_t vfo)
 
 	channel = 0;
 	ctrl = vfo;
+	rig_debug(RIG_DEBUG_VERBOSE, "%s - A\n", __func__);
 
 	switch(vfo){
 		case RIG_VFO_A:
 		case RIG_VFO_VFO:
 			channel = tmv71_BAND_A_CHANNEL;
+			rig_debug(RIG_DEBUG_VERBOSE, "%s - B\n", __func__);
 			break;
 		case RIG_VFO_B:
 			channel = tmv71_BAND_B_CHANNEL;
+			rig_debug(RIG_DEBUG_VERBOSE, "%s - C\n", __func__);
 			break;
 		case RIG_VFO_MEM:
-			
+			rig_debug(RIG_DEBUG_VERBOSE, "%s - D\n", __func__);
 			// get current band
 			retval = tmv71_get_current_vfo(rig, &ctrl, &ptt);
 			if (retval != RIG_OK)
 			{
 				return retval;
+				rig_debug(RIG_DEBUG_VERBOSE, "%s - E\n", __func__);
 			}
+
+			rig_debug(RIG_DEBUG_VERBOSE, "%s - F\n", __func__);
 
 			break;
 		default:
+			rig_debug(RIG_DEBUG_VERBOSE, "%s - G\n", __func__);
 			rig_debug(RIG_DEBUG_ERR, "%s: Unsupported VFO %d\n", __func__, vfo);
 			return -RIG_EVFO;
 	}
@@ -1598,27 +1605,35 @@ int tmv71_set_vfo(RIG *rig, vfo_t vfo)
 	retval = rig_push_vm(rig, ctrl, tmv71_BAND_MODE_MEMORY);
 	if (retval != RIG_OK)
 	{
+		rig_debug(RIG_DEBUG_VERBOSE, "%s - H with error %d\n", __func__, retval);
+		rig_debug(RIG_DEBUG_VERBOSE, "%s - H with error %s\n", __func__, rigerror2(retval));
 		return retval;
 	}
 
 	// If we're using a psudo vfo, set the special memory channel;
 	if( channel > 0 ){
-		
+
+		rig_debug(RIG_DEBUG_TRACE, "%s - Requested psudo VFO memory channel: %d\n", __func__, channel);
+
 		// check that the channel exists
 		struct tmv71_me me_struct;
 		retval = rig_pull_me(rig, channel, &me_struct);
 		if (retval != RIG_OK)
 		{
-			rig_debug(RIG_DEBUG_VERBOSE, "%s - No psudo vfo.  \
-					Creating channel: %d\n", __func__, ctrl);
-
 			// no channel, let's create one.
+
+			rig_debug(RIG_DEBUG_VERBOSE, "%s - Channel doesn't exists. \
+				Creating channel: %d\n", __func__, ctrl);
+
 			retval = tmv71_create_clean_memory_channel(rig, channel);
 			if (retval != RIG_OK)
 			{
 				return retval;
 			}
+
 		}
+
+		rig_debug(RIG_DEBUG_TRACE, "%s - Requested psudo VFO memory channel: %d\n", __func__, channel);
 
 		// set the channel
 		retval = rig_push_mr(rig, ctrl, channel);
@@ -1627,6 +1642,8 @@ int tmv71_set_vfo(RIG *rig, vfo_t vfo)
 			return retval;
 		}
 	}
+
+	rig_debug(RIG_DEBUG_VERBOSE, "%s - I\n", __func__);
 
 	retval = rig_push_bc(rig, ctrl, ctrl);
 	if (retval != RIG_OK)

@@ -996,7 +996,6 @@ struct tmv71_stepFreq tmv71_resolve_supported_freq(int freq)
 /**
  * \brief Provides a VFO for split operation
  * \param for_split_action If the Split VFO is required, 1, else 0
- * \param data  Data pointer to be passed to cfunc()
  *
  *  Depending on whether a Split VFO has been set, this method may either
  *  resolve to the provided VFO, or the already set Split VFO.

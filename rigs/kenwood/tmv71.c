@@ -95,6 +95,10 @@ static int tmv71_set_ext_level(RIG *rig, vfo_t vfo, token_t token, value_t val);
 
 static int rig_pull_bc(RIG *rig, vfo_t *ctrl, vfo_t *ptt);
 
+
+//macros
+#define countof(x) (sizeof(x)/sizeof(*(x)))
+
 // Rig capabilities
 
 #define tmv71_MODE_LIST (RIG_MODE_FM | RIG_MODE_FMN | RIG_MODE_AM)
@@ -407,7 +411,7 @@ static int tmv71_open(RIG *rig)
 	rig_debug(RIG_DEBUG_TRACE, "%s: called\n", __func__);
 
 	tmv71_state.vfo_tx = RIG_VFO_A;
-	tmv71_state.vfo_tx = RIG_VFO_A;
+	tmv71_state.vfo_rx = RIG_VFO_A;
 
 	return 0;
 }
@@ -552,6 +556,20 @@ static int tmv71_vfo_to_channel(RIG *rig, vfo_t vfo, int *channel){
 	}
 	
 	return RIG_OK;
+}
+
+static void tmv71_state_set_vfos( vfo_t vfo_tx, vfo_t vfo_rx, int is_split_mode_active){
+
+	tmv71_state.vfo_tx = vfo_tx;
+	tmv71_state.vfo_rx = vfo_rx;
+	tmv71_state.split_mode_active = is_split_mode_active;
+}
+
+static int tmv71_state_get_tx_vfo(){
+
+	return tmv71_state.split_mode_active 
+		? tmv71_state.vfo_rx
+		: tmv71_state.vfo_tx;
 }
 
 static struct tmv71_me tmv71_get_update_me(){
@@ -936,30 +954,6 @@ int tmv71_update_memory_channel(RIG *rig, int channel, struct tmv71_me *me_new)
 }
 
 /*
- * tmv71_resolve_vfo_name
- *
- * Common function for converting a vfo_t to a string.
- */
-int tmv71_resolve_vfo_name(vfo_t vfo, char *name)
-{
-	switch(vfo){
-		case RIG_VFO_A:
-			strcpy(name, "RIG_VFO_A");
-			break;
-		case RIG_VFO_B:
-			strcpy(name, "RIG_VFO_B");
-			break;
-		case RIG_VFO_CURR :
-			strcpy(name, "RIG_VFO_CURR");
-			break;
-		default:
-			strcpy(name, "UNRESOLVED_VFO");
-	}
-
-	return RIG_OK;
-}
-
-/*
  * tmv71_resolve_freq
  *
  * Common function for converting a frequency into the closes match which
@@ -1006,10 +1000,8 @@ struct tmv71_stepFreq tmv71_resolve_supported_freq(int freq)
 int tmv71_resolve_vfo_for_split(RIG *rig, int for_split_action, vfo_t requested_vfo, vfo_t *resolved_vfo)
 {
 
-	char vfo_debug_name[14];
-	tmv71_resolve_vfo_name(requested_vfo, vfo_debug_name);
 	rig_debug(RIG_DEBUG_TRACE, "%s: called with split_action %d, requested_vfo %s\n",
-			  __func__, for_split_action, vfo_debug_name);
+			  __func__, for_split_action, rig_strvfo(requested_vfo));
 
 	if (tmv71_state.split_mode_active == RIG_SPLIT_ON)
 	{
@@ -1024,9 +1016,8 @@ int tmv71_resolve_vfo_for_split(RIG *rig, int for_split_action, vfo_t requested_
 		*resolved_vfo = requested_vfo;
 	}
 
-	tmv71_resolve_vfo_name(*resolved_vfo, vfo_debug_name);
 	rig_debug(RIG_DEBUG_TRACE, "%s: resolved vfo to %s\n",
-			  __func__, vfo_debug_name);
+			  __func__, rig_strvfo(*resolved_vfo));
 
 	return RIG_OK;
 }
@@ -1086,10 +1077,10 @@ int tmv71_set_freq(RIG *rig, vfo_t vfo, freq_t freq)
 
 	rig_debug(RIG_DEBUG_TRACE, "%s: RIG_VFO_CURRENT: %d)\n", __func__, RIG_VFO_CURR);
 
-	vfo_t split_vfo;
-	tmv71_resolve_vfo_for_split(rig, 0, vfo, &split_vfo);
+	//vfo_t split_vfo;
+	//tmv71_resolve_vfo_for_split(rig, 0, vfo, &split_vfo);
 
-	return tmv71_do_set_freq(rig, split_vfo, freq);
+	return tmv71_do_set_freq(rig, tmv71_state.vfo_rx, freq);
 }
 
 /*
@@ -1100,10 +1091,10 @@ int tmv71_get_freq(RIG *rig, vfo_t vfo, freq_t *freq)
 {
 	rig_debug(RIG_DEBUG_TRACE, "%s: called for vfo: %d)\n", __func__, vfo);
 
-	vfo_t resolved_vfo;
-	tmv71_resolve_vfo_for_split(rig, 0, vfo, &resolved_vfo);
+	//vfo_t resolved_vfo;
+	//tmv71_resolve_vfo_for_split(rig, 0, vfo, &resolved_vfo);
 
-	return tmv71_do_get_freq(rig, resolved_vfo, freq);
+	return tmv71_do_get_freq(rig, tmv71_state.vfo_rx, freq);
 }
 
 /*
@@ -1114,10 +1105,10 @@ int tmv71_set_split_freq(RIG *rig, vfo_t vfo, freq_t freq)
 {
 	rig_debug(RIG_DEBUG_TRACE, "%s: called for vfo: %d, at %f)\n", __func__, vfo, freq);
 
-	vfo_t resolved_vfo;
-	tmv71_resolve_vfo_for_split(rig, 1, vfo, &resolved_vfo);
+	//vfo_t resolved_vfo;
+	//tmv71_resolve_vfo_for_split(rig, 1, vfo, &resolved_vfo);
 
-	return tmv71_do_set_freq(rig, resolved_vfo, freq);
+	return tmv71_do_set_freq(rig, tmv71_state_get_tx_vfo(), freq);
 }
 
 /*
@@ -1128,10 +1119,10 @@ int tmv71_get_split_freq(RIG *rig, vfo_t vfo, freq_t *freq)
 {
 	rig_debug(RIG_DEBUG_TRACE, "%s: called for vfo: %d)\n", __func__, vfo);
 
-	vfo_t resolved_vfo;
-	tmv71_resolve_vfo_for_split(rig, 1, vfo, &resolved_vfo);
+	//vfo_t resolved_vfo;
+	//tmv71_resolve_vfo_for_split(rig, 1, vfo, &resolved_vfo);
 
-	return tmv71_do_get_freq(rig, resolved_vfo, freq);
+	return tmv71_do_get_freq(rig, tmv71_state_get_tx_vfo(), freq);
 }
 
 int tmv71_set_ptt(RIG *rig, vfo_t vfo, ptt_t ptt)
@@ -1280,39 +1271,61 @@ int tmv71_get_ts(RIG *rig, vfo_t vfo, shortfreq_t *step)
 	return retval;
 }
 
-void tmv71_find_tonelist(enum tmv71_tone_type type, tone_t *tone_list)
+void tmv71_populate_tonelist(enum tmv71_tone_type type, tone_t **tone_list, int *length)
 {
+	rig_debug(RIG_DEBUG_TRACE, "%s: address before: %p\n",
+			  __func__, tone_list);
+
+	rig_debug(RIG_DEBUG_TRACE, "%s: address of kenwood42_list: %p\n",
+			  __func__, kenwood42_ctcss_list);
+
 	switch (type)
 	{
 		case tx_tone:
-			tone_list = kenwood42_ctcss_list;
+			*tone_list = kenwood42_ctcss_list;
+			*length = 43;
 			break;
 
 		case ctcss:
-			tone_list = kenwood42_ctcss_list;
+			*tone_list = kenwood42_ctcss_list;
+			*length = 43;
 			break;
 
 		case dcs:
-			tone_list = common_dcs_list;
+			*tone_list = common_dcs_list;
+			*length = 104;
 			break;
 	}
+
+	rig_debug(RIG_DEBUG_TRACE, "%s: address after: %p\n",
+			  __func__, tone_list);
+
+	rig_debug(RIG_DEBUG_TRACE, "%s: kenwood42_ctcss_list 0: %d\n",
+			  __func__, kenwood42_ctcss_list[0]);
+
+	rig_debug(RIG_DEBUG_TRACE, "%s: tonelist 1: %d\n",
+			  __func__, tone_list[0]);
 
 }
 
 int tmv71_tone_to_code(enum tmv71_tone_type type, tone_t tone, int *code)
 {
 
-	tone_t tone_list;
+	tone_t *tone_list;
+	int length;
 
-	tmv71_find_tonelist(type, &tone_list);
+	tmv71_populate_tonelist(type, &tone_list, &length);
+
+	rig_debug(RIG_DEBUG_ERR, "%s: Length: '%d'\n", __func__, tone);
 
 	*code = -1;
 
-	int length = sizeof(tone_list) / sizeof(int);
-
 	for (int cI = 0; cI < length; cI++)
 	{
-		if (tone_list[&cI] == tone)
+		rig_debug(RIG_DEBUG_TRACE, "%s: comparing %d with %d\n",
+			  __func__, tone_list[cI], tone);
+
+		if (tone_list[cI] == tone)
 		{
 			*code = cI;
 			break;
@@ -1324,23 +1337,26 @@ int tmv71_tone_to_code(enum tmv71_tone_type type, tone_t tone, int *code)
 		return -RIG_EINVAL;
 	}
 
+	rig_debug(RIG_DEBUG_ERR, "%s: Mapped freq: %d to code %d\n", __func__, tone, *code);
+
 	return 0;
 }
 
 int tmv71_code_to_tone(enum tmv71_tone_type type, tone_t code, tone_t *tone)
 {
-	tone_t tone_list;
+	tone_t *tone_list;
+	int length;
 
-	tmv71_find_tonelist(type, &tone_list);
+	tmv71_populate_tonelist(type, &tone_list, &length);
 
-	int length = sizeof(tone_list) / sizeof(int);
+	rig_debug(RIG_DEBUG_ERR, "%s: Code: %d, Length: '%d'\n", __func__, code, length);
 
-	if( length >= code ){
+	if( code >= length ){
 		rig_debug(RIG_DEBUG_ERR, "%s: Unsupported tone value '%d'\n", __func__, code);
 		return -RIG_EINVAL;
 	}
 
-	*tone = tone_list[&code];
+	*tone = tone_list[code];
 
 	return 0;
 }
@@ -1399,30 +1415,34 @@ int tmv71_do_set_tone(RIG *rig, vfo_t vfo, enum tmv71_tone_type type, tone_t ton
 	me_struct.dcs = 0;
 
 	enum tmv71_tone_type tone_type;
-	int tone_code;
+	int *tone_code;
 
 	switch (type)
 	{
 	case tx_tone:
 		me_struct.tone = 1;
-		tone_code = me_struct.tone_freq;
+		tone_code = &me_struct.tone_freq;
 		tone_type = ctcss;
 		break;
 
 	case ctcss:
 		me_struct.ct = 1;
-		tone_code = me_struct.ct_freq;
+		tone_code = &me_struct.ct_freq;
 		tone_type = ctcss;
 		break;
 
 	default:
 		me_struct.dcs = 1;
-		tone_code = me_struct.dcs_val;
+		tone_code = &me_struct.dcs_val;
 		tone_type = dcs;
 		break;
 	}
 
-	tmv71_tone_to_code(tone_type, tone, &tone_code);
+	tmv71_tone_to_code(tone_type, tone, tone_code);
+
+	rig_debug(RIG_DEBUG_ERR, "%s: Setting tone code to %d\n", __func__, *tone_code);
+	rig_debug(RIG_DEBUG_ERR, "%s: Setting tone struct code to %d\n", __func__, me_struct.tone_freq);
+
 
 	int channel;
 	tmv71_vfo_to_channel(rig, vfo, &channel);
@@ -1575,27 +1595,20 @@ int tmv71_set_vfo(RIG *rig, vfo_t vfo)
 		case RIG_VFO_A:
 		case RIG_VFO_VFO:
 			channel = tmv71_BAND_A_CHANNEL;
-			rig_debug(RIG_DEBUG_VERBOSE, "%s - B\n", __func__);
 			break;
 		case RIG_VFO_B:
 			channel = tmv71_BAND_B_CHANNEL;
-			rig_debug(RIG_DEBUG_VERBOSE, "%s - C\n", __func__);
 			break;
 		case RIG_VFO_MEM:
-			rig_debug(RIG_DEBUG_VERBOSE, "%s - D\n", __func__);
 			// get current band
 			retval = tmv71_get_current_vfo(rig, &ctrl, &ptt);
 			if (retval != RIG_OK)
 			{
 				return retval;
-				rig_debug(RIG_DEBUG_VERBOSE, "%s - E\n", __func__);
 			}
-
-			rig_debug(RIG_DEBUG_VERBOSE, "%s - F\n", __func__);
 
 			break;
 		default:
-			rig_debug(RIG_DEBUG_VERBOSE, "%s - G\n", __func__);
 			rig_debug(RIG_DEBUG_ERR, "%s: Unsupported VFO %d\n", __func__, vfo);
 			return -RIG_EVFO;
 	}
@@ -1604,7 +1617,6 @@ int tmv71_set_vfo(RIG *rig, vfo_t vfo)
 	retval = rig_push_vm(rig, ctrl, tmv71_BAND_MODE_MEMORY);
 	if (retval != RIG_OK)
 	{
-		rig_debug(RIG_DEBUG_VERBOSE, "%s - H with error %d\n", __func__, retval);
 		rig_debug(RIG_DEBUG_VERBOSE, "%s - H with error %s\n", __func__, rigerror2(retval));
 		return retval;
 	}
@@ -1649,6 +1661,8 @@ int tmv71_set_vfo(RIG *rig, vfo_t vfo)
 	{
 		return retval;
 	}
+	
+	tmv71_state.vfo_rx = ctrl;
 
 	return RIG_OK;
 }
@@ -1712,10 +1726,8 @@ int tmv71_get_vfo(RIG *rig, vfo_t *vfo){
  */
 int tmv71_set_split_vfo(RIG *rig, vfo_t vfo, split_t split, vfo_t txvfo)
 {
-	char vfo_debug_name[14];
-	tmv71_resolve_vfo_name(txvfo, vfo_debug_name);
 	rig_debug(RIG_DEBUG_TRACE, "%s: called with split %d, vfo %s\n",
-			  __func__, split, vfo_debug_name);
+			  __func__, split, rig_strvfo(txvfo));
 
 	int retval = rig_push_bc(rig, txvfo, txvfo);
 	if( retval != RIG_OK)
@@ -1723,20 +1735,18 @@ int tmv71_set_split_vfo(RIG *rig, vfo_t vfo, split_t split, vfo_t txvfo)
 		return retval;
 	}
 
+	vfo_t rxvfo;
 	if (split == RIG_SPLIT_ON) {
-		tmv71_state.vfo_tx = txvfo;
-		tmv71_state.vfo_rx = txvfo == RIG_VFO_A ? RIG_VFO_B : RIG_VFO_A;
-		tmv71_state.split_mode_active = RIG_SPLIT_ON;
-
-		char vfo_debug_tx[14], vfo_debug_rx[14];
-		tmv71_resolve_vfo_name(tmv71_state.vfo_tx, vfo_debug_tx);
-		tmv71_resolve_vfo_name(tmv71_state.vfo_rx, vfo_debug_rx);
-		rig_debug(RIG_DEBUG_TRACE, "%s: Set split VFOs TX: %s, RX: %s\n",
-				  __func__, vfo_debug_tx, vfo_debug_rx);
+		rxvfo = txvfo == RIG_VFO_A ? RIG_VFO_B : RIG_VFO_A;
 	}
 	else{
-		tmv71_state.split_mode_active = RIG_SPLIT_OFF;
+		rxvfo = txvfo;
 	}
+
+	tmv71_state_set_vfos( txvfo, rxvfo, RIG_SPLIT_ON);
+	
+	rig_debug(RIG_DEBUG_TRACE, "%s: Set split VFOs TX: %s, RX: %s, SPLIT: %d\n",
+				__func__, rig_strvfo(tmv71_state.vfo_tx), rig_strvfo(tmv71_state.vfo_rx), split);
 
 	return RIG_OK;
 }

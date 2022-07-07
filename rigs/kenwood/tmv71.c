@@ -76,6 +76,8 @@ static int tmv71_set_channel(RIG *rig, vfo_t vfo, const channel_t *chan);
 static int tmv71_get_channel(RIG *rig, vfo_t vfo, channel_t *chan, int read_only);
 static int tmv71_set_ptt(RIG *rig, vfo_t vfo, ptt_t ptt);
 static int tmv71_get_dcd(RIG *rig, vfo_t vfo, dcd_t *dcd);
+static int tmv71_set_level(RIG *rig, vfo_t vfo, setting_t level, value_t val);
+static int tmv71_get_level(RIG *rig, vfo_t vfo, setting_t level, value_t *val);
 
 /*
 static int tmv71_set_rptr_shift(RIG *rig, vfo_t vfo, rptr_shift_t shift);
@@ -308,7 +310,9 @@ const struct rig_caps tmv71_caps = {
 	.get_mem = tmv71_get_mem,
 	.set_channel = tmv71_set_channel,
 	.get_channel = tmv71_get_channel,
-
+	.set_level = tmv71_set_level,
+	.get_level = tmv71_get_level,
+	
 	/*
 	.set_func = tmv71_set_func,
 	.get_func = tmv71_get_func,
@@ -700,6 +704,58 @@ int rig_push_vm(RIG *rig, vfo_t vfo, int mode)
 
 	snprintf(cmdbuf, sizeof(cmdbuf), "VM %1d,%1d",
 			 band, mode);
+
+	return kenwood_transaction(rig, cmdbuf, buf, sizeof(buf));
+}
+
+/*
+ *	Get Power level.
+ */
+int rig_pull_pc(RIG *rig, vfo_t vfo, int *level)
+{
+	rig_debug(RIG_DEBUG_TRACE, "%s - called to get power for vfo: %s\n",
+			  __func__, rig_strvfo(vfo));
+
+	char cmdbuf[80];
+	char buf[80];
+
+	snprintf(cmdbuf, sizeof(cmdbuf), "PC %d", tmv71_transform_vfo_to_band(vfo));
+
+	int retval;
+	retval = kenwood_transaction(rig, cmdbuf, buf, sizeof(buf));
+	if (retval != RIG_OK)
+	{
+		rig_debug(RIG_DEBUG_TRACE, "%d: failed after kenwood_transaction\n", retval);
+		return retval;
+	}
+
+	int band_ptt;
+
+	retval = num_sscanf(buf, "PC %d,%d", &band_ptt, level);
+
+	if (retval != 2)
+	{
+		rig_debug(RIG_DEBUG_ERR, "%s: Unexpected reply '%s'\n", __func__, buf);
+		return -RIG_ERJCTED;
+	}
+
+	return RIG_OK;
+}
+
+/*
+ *	Set the RX power.
+ */
+int rig_push_pc(RIG *rig, vfo_t vfo, int level)
+{
+	
+	rig_debug(RIG_DEBUG_TRACE, "%s - called to set power for vfo: %d to: %d\n",
+			  __func__, rig_strvfo(vfo), level);
+
+	char cmdbuf[80];
+	char buf[80];
+
+	snprintf(cmdbuf, sizeof(cmdbuf), "PC %1d,%1d",
+			 tmv71_transform_vfo_to_band(vfo), level);
 
 	return kenwood_transaction(rig, cmdbuf, buf, sizeof(buf));
 }
@@ -1980,4 +2036,85 @@ int tmv71_get_channel(RIG *rig, vfo_t vfo, channel_t *chan, int read_only)
 int tmv71_get_dcd(RIG *rig, vfo_t vfo, dcd_t *dcd){
 
 	return rig_pull_by(rig, vfo, dcd);
+}
+
+/*
+ * tmv71_get_level
+ * Assumes rig!=NULL, val!=NULL
+ */
+int tmv71_get_level(RIG *rig, vfo_t vfo, setting_t level, value_t *val)
+{
+	rig_debug(RIG_DEBUG_TRACE, "%s: called level %f, on VFO  %s\n",
+			  __func__, val->f, rig_strvfo(vfo));
+
+	if( level != RIG_LEVEL_RFPOWER ){
+		rig_debug(RIG_DEBUG_ERR, "%s: Unsupported Level %ld\n", __func__, (long)level);
+		return -RIG_EINVAL;
+	}
+
+	vfo_t ctrl, ptt;
+	int retval = rig_pull_bc(rig, &ctrl, &ptt );
+	if (retval != RIG_OK){
+        return retval;
+	}
+
+	int pwr_level;
+
+	retval = rig_pull_pc(rig, ptt, &pwr_level);
+	if (retval != RIG_OK){
+        return retval;
+	}
+
+	rig_debug(RIG_DEBUG_TRACE, "%s: Active level is %d\n",
+			  __func__, pwr_level);
+
+	/* range rig_push_pc
+	rig:High = 1
+	rig:Med = 0.5
+	rig:low = 0.1	
+	*/
+	val->f = pwr_level == 0
+		? 1
+		: pwr_level == 1
+			? 0.5
+			: 0.1;
+
+	rig_debug(RIG_DEBUG_TRACE, "%s: Calculated level is %f\n",
+			  __func__, val->f);
+
+  	return RIG_OK;
+}
+
+int tmv71_set_level(RIG *rig, vfo_t vfo, setting_t level, value_t val)
+{
+	rig_debug(RIG_DEBUG_TRACE, "%s: called level %f, on VFO  %s\n",
+			  __func__, val.f, rig_strvfo(vfo));
+
+
+	if( level != RIG_LEVEL_RFPOWER ){
+		rig_debug(RIG_DEBUG_ERR, "%s: Unsupported Level %ld\n", __func__, (long)level);
+		return -RIG_EINVAL;
+	}
+
+	vfo_t ctrl, ptt;
+	int retval = rig_pull_bc(rig, &ctrl, &ptt );
+	if (retval != RIG_OK){
+        return retval;
+	}
+
+	/* range 
+	rig:High = 1
+	rig:Med = 0.5
+	rig:low = 0.1	
+	*/
+	int pwr_level = val.f == 1
+		? 0
+		: val.f < 0.2
+			? 2
+			: 1;
+
+	rig_debug(RIG_DEBUG_TRACE, "%s: Calculated level is %f\n",
+			  __func__, pwr_level);
+
+	return rig_push_pc(rig, ptt, pwr_level );
 }

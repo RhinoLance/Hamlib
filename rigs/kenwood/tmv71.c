@@ -361,6 +361,7 @@ struct
 {
 	int vfo_tx;
 	int vfo_rx;
+	int vfo_current;
 	int split_mode_active;
 } tmv71_state;
 
@@ -416,6 +417,7 @@ static int tmv71_open(RIG *rig)
 
 	tmv71_state.vfo_tx = RIG_VFO_A;
 	tmv71_state.vfo_rx = RIG_VFO_A;
+	tmv71_state.vfo_current = RIG_VFO_A;
 
 	return 0;
 }
@@ -428,6 +430,8 @@ static int tmv71_transform_vfo_to_band(int vfo)
 {
 	if( vfo == RIG_VFO_A ) return tmv71_BAND_A;
 	if (vfo == RIG_VFO_B) return tmv71_BAND_B;
+	if( vfo == RIG_VFO_CURR) 
+		return tmv71_transform_vfo_to_band(tmv71_state.vfo_current);
 	
 	return tmv71_BAND_UNKNOWN;
 };
@@ -566,6 +570,7 @@ static void tmv71_state_set_vfos( vfo_t vfo_tx, vfo_t vfo_rx, int is_split_mode_
 
 	tmv71_state.vfo_tx = vfo_tx;
 	tmv71_state.vfo_rx = vfo_rx;
+	tmv71_state.vfo_current = vfo_tx;
 	tmv71_state.split_mode_active = is_split_mode_active;
 }
 
@@ -948,7 +953,7 @@ int rig_pull_by(RIG *rig, vfo_t vfo, dcd_t *dcd)
 
 	rig_debug(RIG_DEBUG_TRACE, "%s: called\n", __func__);
 
-	snprintf(cmdbuf, sizeof(cmdbuf), "BY %d", vfo);
+	snprintf(cmdbuf, sizeof(cmdbuf), "BY %d", tmv71_transform_vfo_to_band(vfo));
 
 	int retval;
 	retval = kenwood_transaction(rig, cmdbuf, buf, sizeof(buf));
@@ -957,21 +962,17 @@ int rig_pull_by(RIG *rig, vfo_t vfo, dcd_t *dcd)
 		return retval;
 	}
 
-	int dcdVal;
-	retval = sscanf(buf, "BY %d", &dcdVal);
+	int band, dcdVal;
+	retval = sscanf(buf, "BY %d,%d", &band, &dcdVal);
 	
-	switch (dcdVal)
-	{
-	case 0:
-		*dcd = RIG_DCD_OFF;
-		break;
-	case 1:
-		*dcd = RIG_DCD_ON;
-		break;
-	default:
+	if( dcdVal != 0 && dcdVal != 1 ){
 		rig_debug(RIG_DEBUG_ERR, "%s: unexpected reply '%s', len=%ld\n", __func__, buf, (long)strlen(buf));
 		return -RIG_ERJCTED;
 	}
+
+	*dcd = dcdVal;
+
+	rig_debug(RIG_DEBUG_TRACE, "%s: returning state: %d\n", __func__, *dcd);
 
 	return RIG_OK;
 }
@@ -1470,35 +1471,36 @@ int tmv71_do_set_tone(RIG *rig, vfo_t vfo, enum tmv71_tone_type type, tone_t ton
 	me_struct.ct = 0;
 	me_struct.dcs = 0;
 
-	enum tmv71_tone_type tone_type;
-	int *tone_code;
+	if( tone != 0) {
+		enum tmv71_tone_type tone_type;
+		int *tone_code;
 
-	switch (type)
-	{
-	case tx_tone:
-		me_struct.tone = 1;
-		tone_code = &me_struct.tone_freq;
-		tone_type = ctcss;
-		break;
+		switch (type)
+		{
+		case tx_tone:
+			me_struct.tone = 1;
+			tone_code = &me_struct.tone_freq;
+			tone_type = ctcss;
+			break;
 
-	case ctcss:
-		me_struct.ct = 1;
-		tone_code = &me_struct.ct_freq;
-		tone_type = ctcss;
-		break;
+		case ctcss:
+			me_struct.ct = 1;
+			tone_code = &me_struct.ct_freq;
+			tone_type = ctcss;
+			break;
 
-	default:
-		me_struct.dcs = 1;
-		tone_code = &me_struct.dcs_val;
-		tone_type = dcs;
-		break;
+		default:
+			me_struct.dcs = 1;
+			tone_code = &me_struct.dcs_val;
+			tone_type = dcs;
+			break;
+		}
+
+		tmv71_tone_to_code(tone_type, tone, tone_code);
+
+		rig_debug(RIG_DEBUG_ERR, "%s: Setting tone code to %d\n", __func__, *tone_code);
+		rig_debug(RIG_DEBUG_ERR, "%s: Setting tone struct code to %d\n", __func__, me_struct.tone_freq);
 	}
-
-	tmv71_tone_to_code(tone_type, tone, tone_code);
-
-	rig_debug(RIG_DEBUG_ERR, "%s: Setting tone code to %d\n", __func__, *tone_code);
-	rig_debug(RIG_DEBUG_ERR, "%s: Setting tone struct code to %d\n", __func__, me_struct.tone_freq);
-
 
 	int channel;
 	tmv71_vfo_to_channel(rig, vfo, &channel);
@@ -1719,6 +1721,7 @@ int tmv71_set_vfo(RIG *rig, vfo_t vfo)
 	}
 	
 	tmv71_state.vfo_rx = ctrl;
+	tmv71_state.vfo_current = ctrl;
 
 	return RIG_OK;
 }

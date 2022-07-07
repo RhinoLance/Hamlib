@@ -1553,7 +1553,7 @@ int tmv71_create_clean_memory_channel(RIG *rig, int channel)
 	me_struct.mode = 0;
 	me_struct.tx_freq = 0;
 	me_struct.tx_step = 0;
-	me_struct.lockout = 0;
+	me_struct.lockout = 1;
 
 	int retval = rig_push_me(rig, &me_struct);
 	if (retval != RIG_OK)

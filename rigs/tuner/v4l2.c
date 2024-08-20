@@ -63,14 +63,14 @@ static const char *v4l2_get_info(RIG *rig);
  *
  *
  */
-const struct rig_caps v4l2_caps =
+struct rig_caps v4l2_caps =
 {
     RIG_MODEL(RIG_MODEL_V4L2),
     .model_name = "SW/FM radio",
     .mfg_name =  "Video4Linux2",
     .version =  "20191223.0",
     .copyright =  "LGPL",
-    .status =  RIG_STATUS_BETA,
+    .status =  RIG_STATUS_STABLE,
     .rig_type =  RIG_TYPE_PCRECEIVER,
     .ptt_type =  RIG_PTT_NONE,
     .dcd_type =  RIG_DCD_NONE,
@@ -88,7 +88,6 @@ const struct rig_caps v4l2_caps =
     .has_set_parm =  RIG_PARM_SET(V4L2_PARM_ALL),
     .vfo_ops =  RIG_OP_NONE,
     .level_gran = {
-        // cppcheck-suppress *
         [LVL_RAWSTR] = { .min = { .i = 0 }, .max = { .i = 65535 } },
     },
     .preamp =   { RIG_DBLST_END },
@@ -152,8 +151,8 @@ const struct rig_caps v4l2_caps =
 
 int v4l2_init(RIG *rig)
 {
-    rig->state.rigport.type.rig = RIG_PORT_DEVICE;
-    strncpy(rig->state.rigport.pathname, DEFAULT_V4L2_PATH, HAMLIB_FILPATHLEN - 1);
+    RIGPORT(rig)->type.rig = RIG_PORT_DEVICE;
+    strncpy(RIGPORT(rig)->pathname, DEFAULT_V4L2_PATH, HAMLIB_FILPATHLEN - 1);
 
     return RIG_OK;
 }
@@ -162,14 +161,14 @@ int v4l2_open(RIG *rig)
 {
     int i;
     struct v4l2_tuner vt;
-    struct rig_state *rs = &rig->state;
+    struct rig_state *rs = STATE(rig);
 
     for (i = 0; i < 8; i++)
     {
         int ret;
         double fact;
         vt.index = i;
-        ret = ioctl(rig->state.rigport.fd, VIDIOC_G_TUNER, &vt);
+        ret = ioctl(RIGPORT(rig)->fd, VIDIOC_G_TUNER, &vt);
 
         if (ret < 0)
         {
@@ -191,7 +190,8 @@ int v4l2_open(RIG *rig)
 
 int v4l2_set_freq(RIG *rig, vfo_t vfo, freq_t freq)
 {
-    struct rig_state *rs = &rig->state;
+    const struct rig_state *rs = STATE(rig);
+    hamlib_port_t *rp = RIGPORT(rig);
     struct      v4l2_tuner vt;
     const freq_range_t *range;
     unsigned long f;
@@ -210,7 +210,7 @@ int v4l2_set_freq(RIG *rig, vfo_t vfo, freq_t freq)
 
     vt.index = (rs->rx_range_list - range) / sizeof(freq_range_t);
 
-    ret = ioctl(rig->state.rigport.fd, VIDIOC_S_TUNER, &vt);    /* set tuner # */
+    ret = ioctl(rp->fd, VIDIOC_S_TUNER, &vt);    /* set tuner # */
 
     if (ret < 0)
     {
@@ -223,7 +223,7 @@ int v4l2_set_freq(RIG *rig, vfo_t vfo, freq_t freq)
 
     f = rint(freq * fact);  /* rounding to nearest int */
 
-    ret = ioctl(rig->state.rigport.fd, VIDIOC_S_FREQUENCY, &f);
+    ret = ioctl(rp->fd, VIDIOC_S_FREQUENCY, &f);
 
     if (ret < 0)
     {
@@ -237,14 +237,14 @@ int v4l2_set_freq(RIG *rig, vfo_t vfo, freq_t freq)
 
 int v4l2_get_freq(RIG *rig, vfo_t vfo, freq_t *freq)
 {
-    struct rig_state *rs = &rig->state;
+    const struct rig_state *rs = STATE(rig);
     const freq_range_t *range;
     unsigned long f;
     double fact;
     int ret;
 
     /* FIXME */
-    ret = ioctl(rig->state.rigport.fd, VIDIOC_G_FREQUENCY, &f);
+    ret = ioctl(RIGPORT(rig)->fd, VIDIOC_G_FREQUENCY, &f);
 
     if (ret < 0)
     {
@@ -272,12 +272,13 @@ int v4l2_get_freq(RIG *rig, vfo_t vfo, freq_t *freq)
 int v4l2_set_func(RIG *rig, vfo_t vfo, setting_t func, int status)
 {
     struct v4l2_audio va;
+    hamlib_port_t *rp = RIGPORT(rig);
     int ret;
 
     switch (func)
     {
     case RIG_FUNC_MUTE:
-        ret = ioctl(rig->state.rigport.fd, VIDIOC_G_AUDIO, &va);
+        ret = ioctl(rp->fd, VIDIOC_G_AUDIO, &va);
 
         if (ret < 0)
         {
@@ -287,7 +288,7 @@ int v4l2_set_func(RIG *rig, vfo_t vfo, setting_t func, int status)
         }
 
         va.capability = status ? V4L2_CID_AUDIO_MUTE : 0;
-        ret = ioctl(rig->state.rigport.fd, VIDIOC_S_AUDIO, &va);
+        ret = ioctl(rp->fd, VIDIOC_S_AUDIO, &va);
 
         if (ret < 0)
         {
@@ -313,7 +314,7 @@ int v4l2_get_func(RIG *rig, vfo_t vfo, setting_t func, int *status)
     switch (func)
     {
     case RIG_FUNC_MUTE:
-        ret = ioctl(rig->state.rigport.fd, VIDIOC_G_AUDIO, &va);
+        ret = ioctl(RIGPORT(rig)->fd, VIDIOC_G_AUDIO, &va);
 
         if (ret < 0)
         {
@@ -336,9 +337,10 @@ int v4l2_get_func(RIG *rig, vfo_t vfo, setting_t func, int *status)
 int v4l2_set_level(RIG *rig, vfo_t vfo, setting_t level, value_t val)
 {
     struct v4l2_audio va;
+    hamlib_port_t *rp = RIGPORT(rig);
     int ret;
 
-    ret = ioctl(rig->state.rigport.fd, VIDIOC_G_AUDIO, &va);
+    ret = ioctl(rp->fd, VIDIOC_G_AUDIO, &va);
 
     if (ret < 0)
     {
@@ -359,7 +361,7 @@ int v4l2_set_level(RIG *rig, vfo_t vfo, setting_t level, value_t val)
         return -RIG_EINVAL;
     }
 
-    ret = ioctl(rig->state.rigport.fd, VIDIOC_S_AUDIO, &va);
+    ret = ioctl(rp->fd, VIDIOC_S_AUDIO, &va);
 
     if (ret < 0)
     {
@@ -375,12 +377,13 @@ int v4l2_get_level(RIG *rig, vfo_t vfo, setting_t level, value_t *val)
 {
     struct v4l2_audio va;
     struct v4l2_tuner vt;
+    hamlib_port_t *rp = RIGPORT(rig);
     int ret;
 
     switch (level)
     {
     case RIG_LEVEL_AF:
-        ret = ioctl(rig->state.rigport.fd, VIDIOC_G_AUDIO, &va);
+        ret = ioctl(rp->fd, VIDIOC_G_AUDIO, &va);
 
         if (ret < 0)
         {
@@ -394,7 +397,7 @@ int v4l2_get_level(RIG *rig, vfo_t vfo, setting_t level, value_t *val)
 
     case RIG_LEVEL_RAWSTR:
         /* FE_READ_SIGNAL_STRENGTH ? */
-        ret = ioctl(rig->state.rigport.fd, VIDIOC_G_TUNER, &vt);    /* get info */
+        ret = ioctl(rp->fd, VIDIOC_G_TUNER, &vt);    /* get info */
 
         if (ret < 0)
         {
@@ -422,7 +425,7 @@ const char *v4l2_get_info(RIG *rig)
     int ret;
 
     vt.index = 0;
-    ret = ioctl(rig->state.rigport.fd, VIDIOC_G_TUNER, &vt);
+    ret = ioctl(RIGPORT(rig)->fd, VIDIOC_G_TUNER, &vt);
 
     if (ret < 0)
     {

@@ -18,6 +18,7 @@
  *   Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  *
  */
+/* SPDX-License-Identifier: LGPL-2.1-or-later */
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -43,6 +44,7 @@
 static struct kenwood_priv_caps ts570_priv_caps  =
 {
     .cmdtrm =  EOM_KEN,
+    .tone_table_base = 1,
 };
 
 static int ts570_get_mode(RIG *rig, vfo_t vfo, rmode_t *mode, pbwidth_t *width)
@@ -349,7 +351,7 @@ ts570_set_level(RIG *rig, vfo_t vfo, setting_t level, value_t val)
             int i;
 
             for (i = 0; i < HAMLIB_MAXDBLSTSIZ; i++)
-                if (kenwood_val == rig->state.preamp[i])
+                if (kenwood_val == STATE(rig)->preamp[i])
                 {
                     SNPRINTF(levelbuf, sizeof(levelbuf), "PA%01d", i + 1);
                     break;  /* found - stop searching */
@@ -473,7 +475,7 @@ ts570_get_level(RIG *rig, vfo_t vfo, setting_t level, value_t *val)
 
             for (i = 0; i < levelint && i < HAMLIB_MAXDBLSTSIZ; i++)
             {
-                if (rig->state.preamp[i] == 0)
+                if (STATE(rig)->preamp[i] == 0)
                 {
                     rig_debug(RIG_DEBUG_ERR, "%s: unexpected att level %d\n", __func__,
                               (int)levelint);
@@ -486,7 +488,7 @@ ts570_get_level(RIG *rig, vfo_t vfo, setting_t level, value_t *val)
                 return -RIG_EINTERNAL;
             }
 
-            val->i = rig->state.preamp[i - 1];
+            val->i = STATE(rig)->preamp[i - 1];
         }
 
         break;
@@ -891,12 +893,11 @@ int ts570_set_xit(RIG *rig, vfo_t vfo, shortfreq_t rit)
 /*
  * ts570 rig capabilities.
  * Notice that some rigs share the same functions.
- * Also this struct is READONLY!
  * RIT: Variable Range ±9.99 kHz
  *
  * part of infos comes from .http = //www.kenwood.net/
  */
-const struct rig_caps ts570s_caps =
+struct rig_caps ts570s_caps =
 {
     RIG_MODEL(RIG_MODEL_TS570S),
     .model_name = "TS-570S",
@@ -1078,12 +1079,11 @@ const struct rig_caps ts570s_caps =
 /*
  * ts570d rig capabilities, which is basically the ts570s without 6m.
  * Notice that some rigs share the same functions.
- * Also this struct is READONLY!
  * RIT: Variable Range ±9.99 kHz
  *
  * part of infos comes from .http = //www.kenwood.net/
  */
-const struct rig_caps ts570d_caps =
+struct rig_caps ts570d_caps =
 {
     RIG_MODEL(RIG_MODEL_TS570D),
     .model_name = "TS-570D",
@@ -1134,6 +1134,7 @@ const struct rig_caps ts570d_caps =
     .chan_list =  {
         {  0, 89, RIG_MTYPE_MEM,  TS570_MEM_CAP  },
         { 90, 99, RIG_MTYPE_EDGE, TS570_MEM_CAP  },
+		{  1,	3, RIG_MTYPE_MORSE },
         RIG_CHAN_END,
     },
     .rx_range_list1 =  {

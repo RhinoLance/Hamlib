@@ -31,6 +31,7 @@
  * @{
  */
 
+#include <hamlib/rig.h>
 #include <hamlib/config.h>
 
 #include <stdio.h>   /* Standard input/output definitions */
@@ -52,8 +53,11 @@
 #include "cm108.h"
 #include "asyncpipe.h"
 
+#define HAMLIB_TRACE2 rig_debug(RIG_DEBUG_TRACE,"%s trace(%d)\n",  __FILE__, __LINE__)
+
 #if defined(WIN32) && defined(HAVE_WINDOWS_H)
 #include <windows.h>
+
 
 static void init_sync_data_pipe(hamlib_port_t *p)
 {
@@ -835,11 +839,11 @@ static int port_read_sync_data_error_code(hamlib_port_t *p, int fd, int direct)
     ssize_t total_bytes_read = 0;
     ssize_t bytes_read;
     struct timeval tv_timeout;
-    int result;
     signed char data;
 
     do
     {
+        int result;
         tv_timeout.tv_sec = 0;
         tv_timeout.tv_usec = 0;
 
@@ -956,13 +960,22 @@ static int port_wait_for_data(hamlib_port_t *p, int direct)
 int HAMLIB_API write_block_sync(hamlib_port_t *p, const unsigned char *txbuffer,
                                 size_t count)
 {
+    int retval = RIG_OK;
 
     if (p->asyncio)
     {
-        return (int) write(p->fd_sync_write, txbuffer, count);
+        retval = write(p->fd_sync_write, txbuffer, count);
     }
-
-    return (int) write(p->fd, txbuffer, count);
+    else
+    {
+        retval = write(p->fd, txbuffer, count);
+    }
+    if (retval != count)
+    {
+        rig_debug(RIG_DEBUG_ERR, "%s: write failed: %s\n", __func__, strerror(errno));
+        retval = -RIG_EIO;
+    }
+    return retval;
 }
 
 int HAMLIB_API write_block_sync_error(hamlib_port_t *p,
@@ -990,20 +1003,24 @@ int HAMLIB_API port_flush_sync_pipes(hamlib_port_t *p)
     rig_debug(RIG_DEBUG_TRACE, "%s: flushing sync pipes\n", __func__);
 
     nbytes = 0;
+
     while ((n = read(p->fd_sync_read, buf, sizeof(buf))) > 0)
     {
         nbytes += n;
     }
 
-    rig_debug(RIG_DEBUG_TRACE, "read flushed %d bytes from sync read pipe\n", nbytes);
+    rig_debug(RIG_DEBUG_TRACE, "read flushed %d bytes from sync read pipe\n",
+              nbytes);
 
     nbytes = 0;
+
     while ((n = read(p->fd_sync_error_read, buf, sizeof(buf))) > 0)
     {
         nbytes += n;
     }
 
-    rig_debug(RIG_DEBUG_TRACE, "read flushed %d bytes from sync error read pipe\n", nbytes);
+    rig_debug(RIG_DEBUG_TRACE, "read flushed %d bytes from sync error read pipe\n",
+              nbytes);
 
     return RIG_OK;
 }
@@ -1043,7 +1060,6 @@ int HAMLIB_API write_block(hamlib_port_t *p, const unsigned char *txbuffer,
                            size_t count)
 {
     int ret;
-    int method = 0;
 
     if (p->fd < 0)
     {
@@ -1080,7 +1096,6 @@ int HAMLIB_API write_block(hamlib_port_t *p, const unsigned char *txbuffer,
     if (p->write_delay > 0)
     {
         int i;
-        method = 1;
 
         for (i = 0; i < count; i++)
         {
@@ -1103,7 +1118,6 @@ int HAMLIB_API write_block(hamlib_port_t *p, const unsigned char *txbuffer,
     }
     else
     {
-        method = 2;
         ret = port_write(p, txbuffer, count);
 
         if (ret != count)
@@ -1119,13 +1133,12 @@ int HAMLIB_API write_block(hamlib_port_t *p, const unsigned char *txbuffer,
         }
     }
 
-    rig_debug(RIG_DEBUG_TRACE, "%s(): TX %d bytes, method=%d\n", __func__,
-              (int)count, method);
+    rig_debug(RIG_DEBUG_TRACE, "%s(): TX %d bytes\n", __func__,
+              (int)count);
     dump_hex((unsigned char *) txbuffer, count);
 
     if (p->post_write_delay > 0)
     {
-        method |= 4;
 #if 0
 #ifdef WANT_NON_ACTIVE_POST_WRITE_DELAY
 #define POST_WRITE_DELAY_TRSHLD 10
@@ -1179,8 +1192,9 @@ static int read_block_generic(hamlib_port_t *p, unsigned char *rxbuffer,
             if (timeout_retries > 0)
             {
                 timeout_retries--;
-                rig_debug(RIG_DEBUG_CACHE, "%s(%d): retrying read timeout %d/%d timeout=%dms\n", __func__, __LINE__,
-                    p->timeout_retry - timeout_retries, p->timeout_retry, p->timeout);
+                rig_debug(RIG_DEBUG_CACHE, "%s(%d): retrying read timeout %d/%d timeout=%dms\n",
+                          __func__, __LINE__,
+                          p->timeout_retry - timeout_retries, p->timeout_retry, p->timeout);
                 hl_usleep(10 * 1000);
                 continue;
             }
@@ -1307,7 +1321,7 @@ static int read_string_generic(hamlib_port_t *p,
     int i = 0;
     static int minlen = 1; // dynamic minimum length of rig response data
 
-    if (!p->asyncio && !direct)
+    if (p != NULL && !p->asyncio && !direct)
     {
         return -RIG_EINTERNAL;
     }
@@ -1335,22 +1349,21 @@ static int read_string_generic(hamlib_port_t *p,
     memset(rxbuffer, 0, rxmax);
 
     short timeout_retries = p->timeout_retry;
+
     while (total_count < rxmax - 1) // allow 1 byte for end-of-string
     {
         ssize_t rd_count = 0;
         int result;
-        int timeout_save = p->timeout;
-//        p->timeout = 2;
         result = port_wait_for_data(p, direct);
-        p->timeout = timeout_save;
 
         if (result == -RIG_ETIMEOUT)
         {
             if (timeout_retries > 0)
             {
                 timeout_retries--;
-                rig_debug(RIG_DEBUG_CACHE, "%s(%d): retrying read timeout %d/%d timeout=%d\n", __func__, __LINE__,
-                    p->timeout_retry - timeout_retries, p->timeout_retry, p->timeout);
+                rig_debug(RIG_DEBUG_CACHE, "%s(%d): retrying read timeout %d/%d timeout=%d\n",
+                          __func__, __LINE__,
+                          p->timeout_retry - timeout_retries, p->timeout_retry, p->timeout);
                 hl_usleep(10 * 1000);
                 continue;
             }
@@ -1400,6 +1413,7 @@ static int read_string_generic(hamlib_port_t *p,
          * read 1 character from the rig, (check if in stop set)
          * The file descriptor must have been set up non blocking.
          */
+        do
         {
 #if 0
 #ifndef __MINGW32__
@@ -1409,6 +1423,7 @@ static int read_string_generic(hamlib_port_t *p,
             //rig_debug(RIG_DEBUG_ERR, "xs: avail=%d expected_len=%d, minlen=%d, direct=%d\n", __func__, avail, expected_len, minlen, direct);
 #endif
 #endif
+shortcut:
             rd_count = port_read_generic(p, &rxbuffer[total_count],
                                          expected_len == 1 ? 1 : minlen, direct);
 //            rig_debug(RIG_DEBUG_VERBOSE, "%s: read %d bytes tot=%d\n", __func__, (int)rd_count, total_count);
@@ -1417,9 +1432,25 @@ static int read_string_generic(hamlib_port_t *p,
             if (errno == EAGAIN)
             {
                 hl_usleep(5 * 1000);
-                rig_debug(RIG_DEBUG_WARN, "%s: port_read is busy? direct=%d\n", __func__,
-                          direct);
+//                rig_debug(RIG_DEBUG_WARN, "%s: port_read is busy? direct=%d\n", __func__,
+//                          direct);
             }
+
+            // special read for FLRig
+            if (stopset != NULL && strcmp(stopset, "</methodResponse>") == 0)
+            {
+                if (strstr((char *)rxbuffer, stopset))
+                {
+                    HAMLIB_TRACE2;
+                }
+
+                else
+                {
+                    HAMLIB_TRACE2;
+                    goto shortcut;
+                }
+            }
+
         }
 
         while (++i < 10 && errno == EBUSY);   // 50ms should be enough
@@ -1461,7 +1492,7 @@ static int read_string_generic(hamlib_port_t *p,
 
     if (total_count > 1 && rxbuffer[0] == ';')
     {
-        while (rxbuffer[0] == ';' && rxbuffer[0] != 0 && total_count >  1)
+        while (rxbuffer[0] == ';' && total_count >  1)
         {
             memmove(rxbuffer, &rxbuffer[1], strlen((char *)rxbuffer) - 1);
             --total_count;

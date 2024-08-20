@@ -151,8 +151,8 @@ static int ic746_get_parm(RIG *rig, setting_t parm, value_t *val);
 static int ic746pro_get_channel(RIG *rig, vfo_t vfo, channel_t *chan,
                                 int read_only);
 static int ic746pro_set_channel(RIG *rig, vfo_t vfo, const channel_t *chan);
-static int ic746pro_set_ext_parm(RIG *rig, token_t token, value_t val);
-static int ic746pro_get_ext_parm(RIG *rig, token_t token, value_t *val);
+static int ic746pro_set_ext_parm(RIG *rig, hamlib_token_t token, value_t val);
+static int ic746pro_get_ext_parm(RIG *rig, hamlib_token_t token, value_t *val);
 
 
 /*
@@ -176,7 +176,7 @@ static const struct icom_priv_caps ic746_priv_caps =
     },
 };
 
-const struct rig_caps ic746_caps =
+struct rig_caps ic746_caps =
 {
     RIG_MODEL(RIG_MODEL_IC746),
     .model_name = "IC-746",
@@ -207,8 +207,6 @@ const struct rig_caps ic746_caps =
     .level_gran =
     {
 #include "level_gran_icom.h"
-        // cppcheck-suppress *
-        [LVL_RAWSTR] = { .min = { .i = 0 }, .max = { .i = 255 } },
         [LVL_KEYSPD] = { .min = { .i = 6 }, .max = { .i = 48 }, .step = { .i = 1 } },
         [LVL_CWPITCH] = { .min = { .i = 300 }, .max = { .i = 900 }, .step = { .i = 1 } },
     },
@@ -299,7 +297,7 @@ const struct rig_caps ic746_caps =
     .rig_init =   icom_init,
     .rig_cleanup =   icom_cleanup,
     .rig_open =  icom_rig_open,
-    .rig_close =  icom_rig_open,
+    .rig_close =  icom_rig_close,
 
     .set_freq =  icom_set_freq,
     .get_freq =  icom_get_freq,
@@ -413,7 +411,7 @@ static const struct icom_priv_caps ic746pro_priv_caps =
     },
 };
 
-const struct rig_caps ic746pro_caps =
+struct rig_caps ic746pro_caps =
 {
     RIG_MODEL(RIG_MODEL_IC746PRO),
     .model_name = "IC-746PRO",
@@ -444,7 +442,6 @@ const struct rig_caps ic746pro_caps =
     .level_gran =
     {
 #include "level_gran_icom.h"
-        [LVL_RAWSTR] = { .min = { .i = 0 }, .max = { .i = 255 } },
     },
     .parm_gran =  {
         [PARM_BACKLIGHT] = {.min = {.f = 0.0f}, .max = {.f = 1.0f}, .step = {.f = 1.0f / 255.0f}},
@@ -559,8 +556,8 @@ const struct rig_caps ic746pro_caps =
 
     .set_freq =  icom_set_freq,
     .get_freq =  icom_get_freq,
-    .set_mode =  icom_set_mode_with_data,
-    .get_mode =  icom_get_mode_with_data,
+    .set_mode =  icom_set_mode,
+    .get_mode =  icom_get_mode,
     .set_vfo =  icom_set_vfo,
 //    .get_vfo =  icom_get_vfo,
     .set_ant =  icom_set_ant,
@@ -604,9 +601,9 @@ const struct rig_caps ic746pro_caps =
 
 
 /*
- * Assumes rig!=NULL, rig->state.priv!=NULL
+ * Assumes rig!=NULL, STATE(rig)->priv!=NULL
  */
-static int ic746pro_set_ext_parm(RIG *rig, token_t token, value_t val)
+static int ic746pro_set_ext_parm(RIG *rig, hamlib_token_t token, value_t val)
 {
     unsigned char epbuf[MAXFRAMELEN], ackbuf[MAXFRAMELEN];
     int ack_len, ep_len, val_len;
@@ -667,10 +664,10 @@ static int ic746pro_set_ext_parm(RIG *rig, token_t token, value_t val)
 }
 
 /*
- * Assumes rig!=NULL, rig->state.priv!=NULL
+ * Assumes rig!=NULL, STATE(rig)->priv!=NULL
  *  and val points to a buffer big enough to hold the conf value.
  */
-static int ic746pro_get_ext_parm(RIG *rig, token_t token, value_t *val)
+static int ic746pro_get_ext_parm(RIG *rig, hamlib_token_t token, value_t *val)
 {
     const struct confparams *cfp;
 
@@ -921,7 +918,7 @@ int ic746_get_parm(RIG *rig, setting_t parm, value_t *val)
 
 /*
  * ic746pro_get_channel
- * Assumes rig!=NULL, rig->state.priv!=NULL, chan!=NULL
+ * Assumes rig!=NULL, STATE(rig)->priv!=NULL, chan!=NULL
  *
  * If memory is empty it will return RIG_OK,but every thing will be null. Where do we boundary check?
  */
@@ -932,7 +929,7 @@ int ic746pro_get_channel(RIG *rig, vfo_t vfo, channel_t *chan, int read_only)
     unsigned char chanbuf[MAXFRAMELEN];
     int chan_len, freq_len, retval, data_len;
 
-    rs = &rig->state;
+    rs = STATE(rig);
     priv = (struct icom_priv_data *)rs->priv;
 
     to_bcd_be(chanbuf, chan->channel_num, 4);
@@ -1089,7 +1086,7 @@ int ic746pro_get_channel(RIG *rig, vfo_t vfo, channel_t *chan, int read_only)
 
 /*
  * ic746pro_set_channel
- * Assumes rig!=NULL, rig->state.priv!=NULL, chan!=NULL
+ * Assumes rig!=NULL, STATE(rig)->priv!=NULL, chan!=NULL
  */
 int ic746pro_set_channel(RIG *rig, vfo_t vfo, const channel_t *chan)
 {
@@ -1099,7 +1096,7 @@ int ic746pro_set_channel(RIG *rig, vfo_t vfo, const channel_t *chan)
     unsigned char chanbuf[MAXFRAMELEN], ackbuf[MAXFRAMELEN];
     int chan_len, ack_len, freq_len, retval;
 
-    rs = &rig->state;
+    rs = STATE(rig);
     priv = (struct icom_priv_data *)rs->priv;
 
     freq_len = priv->civ_731_mode ? 4 : 5;

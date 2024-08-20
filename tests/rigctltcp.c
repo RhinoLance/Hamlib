@@ -22,6 +22,7 @@
  *   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  *
  */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 #include <hamlib/config.h>
 
@@ -280,6 +281,7 @@ int main(int argc, char *argv[])
     int vfo_mode = 0; /* vfo_mode=0 means target VFO is current VFO */
     int i;
     extern int is_rigctld;
+    struct rig_state *rs;
 
     is_rigctld = 1;
 
@@ -586,7 +588,7 @@ int main(int argc, char *argv[])
 
             twiddle_rit = atoi(optarg);
             fprintf(stderr,
-                    "twiddle_timeout is deprecated...use e.g. --set-conf=twiddle_timeout=5\n");
+                    "twiddle_rit is deprecated...use e.g. --set-conf=twiddle_rit=1\n");
             break;
 
 
@@ -674,7 +676,8 @@ int main(int argc, char *argv[])
         exit(2);
     }
 
-    retcode = set_conf(my_rig, conf_parms);
+    retcode = -RIG_ENIMPL;
+//    retcode = set_conf(my_rig, conf_parms);
 
     if (retcode != RIG_OK)
     {
@@ -684,53 +687,54 @@ int main(int argc, char *argv[])
 
     if (rig_file)
     {
-        strncpy(my_rig->state.rigport.pathname, rig_file, HAMLIB_FILPATHLEN - 1);
+        strncpy(RIGPORT(my_rig)->pathname, rig_file, HAMLIB_FILPATHLEN - 1);
     }
 
-    my_rig->state.twiddle_timeout = twiddle_timeout;
-    my_rig->state.twiddle_rit = twiddle_rit;
-    my_rig->state.uplink = uplink;
+    rs = STATE(my_rig);
+    rs->twiddle_timeout = twiddle_timeout;
+    rs->twiddle_rit = twiddle_rit;
+    rs->uplink = uplink;
     rig_debug(RIG_DEBUG_TRACE, "%s: twiddle=%d, uplink=%d, twiddle_rit=%d\n",
               __func__,
-              my_rig->state.twiddle_timeout, my_rig->state.uplink, my_rig->state.twiddle_rit);
+              rs->twiddle_timeout, rs->uplink, rs->twiddle_rit);
 
     /*
      * ex: RIG_PTT_PARALLEL and /dev/parport0
      */
     if (ptt_type != RIG_PTT_NONE)
     {
-        my_rig->state.pttport.type.ptt = ptt_type;
-        my_rig->state.pttport_deprecated.type.ptt = ptt_type;
+        PTTPORT(my_rig)->type.ptt = ptt_type;
+        rs->pttport_deprecated.type.ptt = ptt_type;
         // This causes segfault since backend rig_caps are const
-        // rigctld will use the rig->state version of this for clients
+        // rigctld will use the STATE(rig) version of this for clients
         //my_rig->caps->ptt_type = ptt_type;
     }
 
     if (dcd_type != RIG_DCD_NONE)
     {
-        my_rig->state.dcdport.type.dcd = dcd_type;
-        my_rig->state.dcdport_deprecated.type.dcd = dcd_type;
+        DCDPORT(my_rig)->type.dcd = dcd_type;
+        rs->dcdport_deprecated.type.dcd = dcd_type;
     }
 
     if (ptt_file)
     {
-        strncpy(my_rig->state.pttport.pathname, ptt_file, HAMLIB_FILPATHLEN - 1);
-        strncpy(my_rig->state.pttport_deprecated.pathname, ptt_file,
+        strncpy(PTTPORT(my_rig)->pathname, ptt_file, HAMLIB_FILPATHLEN - 1);
+        strncpy(rs->pttport_deprecated.pathname, ptt_file,
                 HAMLIB_FILPATHLEN - 1);
     }
 
     if (dcd_file)
     {
-        strncpy(my_rig->state.dcdport.pathname, dcd_file, HAMLIB_FILPATHLEN - 1);
-        strncpy(my_rig->state.dcdport_deprecated.pathname, dcd_file,
+        strncpy(DCDPORT(my_rig)->pathname, dcd_file, HAMLIB_FILPATHLEN - 1);
+        strncpy(rs->dcdport_deprecated.pathname, dcd_file,
                 HAMLIB_FILPATHLEN - 1);
     }
 
     /* FIXME: bound checking and port type == serial */
     if (serial_rate != 0)
     {
-        my_rig->state.rigport.parm.serial.rate = serial_rate;
-        my_rig->state.rigport_deprecated.parm.serial.rate = serial_rate;
+        RIGPORT(my_rig)->parm.serial.rate = serial_rate;
+        rs->rigport_deprecated.parm.serial.rate = serial_rate;
     }
 
     if (civaddr)
@@ -787,7 +791,7 @@ int main(int argc, char *argv[])
 
         if (verbose > RIG_DEBUG_ERR)
         {
-            printf("Closed rig model %d, '%s - will reopen for clients'\n",
+            printf("Closed rig model %u, '%s - will reopen for clients'\n",
                    my_rig->caps->rig_model,
                    my_rig->caps->model_name);
         }
@@ -1034,7 +1038,7 @@ int main(int argc, char *argv[])
             {
                 rig_debug(RIG_DEBUG_VERBOSE, "%s: ignoring interrupted system call\n",
                           __func__);
-                retcode = 0;
+                //retcode = 0; // not used?
             }
         }
         else if (retcode == 0)
@@ -1096,7 +1100,7 @@ int main(int argc, char *argv[])
 #endif
         }
     }
-    while (retcode == 0 && !ctrl_c);
+    while (!ctrl_c);
 
     rig_debug(RIG_DEBUG_VERBOSE, "%s: while loop done\n", __func__);
 
@@ -1227,7 +1231,7 @@ void *handle_socket(void *arg)
         mutex_rigctld(1);
         rig_get_powerstat(my_rig, &rig_powerstat);
         mutex_rigctld(0);
-        my_rig->state.powerstat = rig_powerstat;
+        STATE(my_rig)->powerstat = rig_powerstat;
     }
 
     do
@@ -1244,7 +1248,7 @@ void *handle_socket(void *arg)
 
         mutex_rigctld(0);
 
-        int nbytes = -1;
+        int nbytes;
 
         if (rig_opened) // only do this if rig is open
         {
@@ -1307,7 +1311,7 @@ void *handle_socket(void *arg)
             if (cmd[0] != 0)
             {
                 memset(reply, 0, sizeof(reply));
-                rig_flush(&my_rig->state.rigport);
+                rig_flush(RIGPORT(my_rig));
                 retcode = rig_send_raw(my_rig, cmd, nbytes, reply, sizeof(reply),
                                        term);
 
@@ -1415,7 +1419,12 @@ void *handle_socket(void *arg)
 
 client_done:
 
+#if defined(HAVE_PTHREAD)
+
     if (rigctld_idle && client_count == 1)
+#else
+    if (rigctld_idle)
+#endif
     {
         rig_close(my_rig);
 
@@ -1426,7 +1435,7 @@ client_done:
 #ifdef HAVE_PTHREAD
     --client_count;
 
-    if (rigctld_idle && client_count > 0) { printf("%d client%s still connected so rig remains open\n", client_count, client_count > 1 ? "s" : ""); }
+    if (rigctld_idle && client_count > 0) { printf("%u client%s still connected so rig remains open\n", client_count, client_count > 1 ? "s" : ""); }
 
 #if 0
     mutex_rigctld(1);

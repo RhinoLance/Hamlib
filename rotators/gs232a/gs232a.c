@@ -64,19 +64,17 @@ static int
 gs232a_transaction(ROT *rot, const char *cmdstr,
                    char *data, size_t data_len, int no_reply)
 {
-    struct rot_state *rs;
+    hamlib_port_t *rotp = ROTPORT(rot);
     int retval;
     int retry_read = 0;
 
-    rs = &rot->state;
-
 transaction_write:
 
-    rig_flush(&rs->rotport);
+    rig_flush(rotp);
 
     if (cmdstr)
     {
-        retval = write_block(&rs->rotport, (unsigned char *) cmdstr, strlen(cmdstr));
+        retval = write_block(rotp, (unsigned char *) cmdstr, strlen(cmdstr));
 
         if (retval != RIG_OK)
         {
@@ -98,7 +96,7 @@ transaction_write:
     if (!no_reply)
     {
         memset(data, 0, data_len);
-        retval = read_string(&rs->rotport, (unsigned char *) data, data_len,
+        retval = read_string(rotp, (unsigned char *) data, data_len,
                              REPLY_EOM, strlen(REPLY_EOM), 0, 1);
 
         if (strncmp(data, "\r\n", 2) == 0
@@ -112,7 +110,7 @@ transaction_write:
 
         if (retval < 0)
         {
-            if (retry_read++ < rot->state.rotport.retry)
+            if (retry_read++ < rotp->retry)
             {
                 goto transaction_write;
             }
@@ -129,7 +127,7 @@ transaction_write:
         rig_debug(RIG_DEBUG_ERR, "%s: Command is not correctly terminated '%s'\n",
                   __func__, data);
 
-        if (retry_read++ < rig->state.rotport.retry)
+        if (retry_read++ < rotp->retry)
         {
             goto transaction_write;
         }
@@ -236,7 +234,7 @@ gs232a_rot_stop(ROT *rot)
 
 static int gs232a_rot_get_level(ROT *rot, setting_t level, value_t *val)
 {
-    struct rot_state *rs = &rot->state;
+    const struct rot_state *rs = ROTSTATE(rot);
 
     rig_debug(RIG_DEBUG_VERBOSE, "%s called: %s\n", __func__, rot_strlevel(level));
 
@@ -256,9 +254,7 @@ static int gs232a_rot_get_level(ROT *rot, setting_t level, value_t *val)
 
 static int gs232a_rot_set_level(ROT *rot, setting_t level, value_t val)
 {
-    struct rot_state *rs = &rot->state;
-    char cmdstr[24];
-    int retval;
+    struct rot_state *rs = ROTSTATE(rot);
 
     rig_debug(RIG_DEBUG_VERBOSE, "%s called: %s\n", __func__, rot_strlevel(level));
 
@@ -266,6 +262,8 @@ static int gs232a_rot_set_level(ROT *rot, setting_t level, value_t val)
     {
     case ROT_LEVEL_SPEED:
     {
+        char cmdstr[24];
+        int retval;
         int speed = val.i;
 
         if (speed < 1)
@@ -364,7 +362,7 @@ static int gs232a_rot_move(ROT *rot, int direction, int speed)
 
 static int gs232a_rot_init(ROT *rot)
 {
-    struct rot_state *rs = &rot->state;
+    struct rot_state *rs = ROTSTATE(rot);
 
     rig_debug(RIG_DEBUG_VERBOSE, "%s called\n", __func__);
 

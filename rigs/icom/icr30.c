@@ -124,14 +124,14 @@ static struct icom_priv_caps icr30_priv_caps =
     .extcmds = icr30_extcmds      /* Custom ext_parm parameters */
 };
 
-const struct rig_caps icr30_caps =
+struct rig_caps icr30_caps =
 {
     RIG_MODEL(RIG_MODEL_ICR30),
     .model_name = "IC-R30",
     .mfg_name =  "Icom",
     .version =  BACKEND_VER ".0",
     .copyright =  "LGPL",
-    .status =  RIG_STATUS_BETA,
+    .status =  RIG_STATUS_STABLE,
     .rig_type =  RIG_TYPE_RECEIVER | RIG_FLAG_HANDHELD,
     .ptt_type =  RIG_PTT_NONE,
     .dcd_type =  RIG_DCD_RIG,
@@ -153,7 +153,6 @@ const struct rig_caps icr30_caps =
     .has_get_parm =  RIG_PARM_NONE,
     .has_set_parm =  RIG_PARM_NONE,
     .level_gran = {
-        // cppcheck-suppress *
         [LVL_RAWSTR] = { .min = { .i = 0 }, .max = { .i = 255 } },
     },
     .parm_gran =  {},

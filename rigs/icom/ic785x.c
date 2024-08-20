@@ -235,10 +235,16 @@ static struct icom_priv_caps ic785x_priv_caps =
         },
     },
     .extcmds = ic785x_extcmds,
-    .x25_always = 1,
+    .x25x26_always = 1,
+    .x25x26_possibly = 1,
+    .x1cx03_always = 1,
+    .x1cx03_possibly = 1,
+    .x1ax03_supported = 1,
+    .mode_with_filter = 1,
+    .data_mode_supported = 1
 };
 
-const struct rig_caps ic785x_caps =
+struct rig_caps ic785x_caps =
 {
     RIG_MODEL(RIG_MODEL_IC785x),
     .model_name = "IC-7850/7851",
@@ -267,7 +273,6 @@ const struct rig_caps ic785x_caps =
     .has_get_parm =  IC785x_PARMS,
     .has_set_parm =  RIG_PARM_SET(IC785x_PARMS),    /* FIXME: parms */
     .level_gran = {
-        // cppcheck-suppress *
         [LVL_RAWSTR] = { .min = { .i = 0 }, .max = { .i = 255 } },
         [LVL_VOXDELAY] = { .min = { .i = 0 }, .max = { .i = 20 }, .step = { .i = 1 } },
         [LVL_KEYSPD] = { .min = { .i = 6 }, .max = { .i = 48 }, .step = { .i = 1 } },
@@ -283,7 +288,7 @@ const struct rig_caps ic785x_caps =
         [PARM_BEEP] = {.min = {.i = 0}, .max = {.i = 1}, .step = {.i = 1}},
         [PARM_TIME] = {.min = {.i = 0}, .max = {.i = 86399}, .step = {.i = 1}},
         [PARM_ANN] = {.min = {.i = 0}, .max = {.i = 2}, .step = {.i = 1}},
-        [PARM_KEYERTYPE] = {.step = {.s = "STRAIGHT, BUG, PADDLE"}},
+        [PARM_KEYERTYPE] = {.step = {.s = "STRAIGHT,BUG,PADDLE"}},
     },
 
     .ext_tokens = ic785x_ext_tokens,
@@ -444,10 +449,10 @@ const struct rig_caps ic785x_caps =
 
     .set_freq =  icom_set_freq,
     .get_freq =  icom_get_freq,
-    .set_mode =  icom_set_mode_with_data,
-    .get_mode =  icom_get_mode_with_data,
+    .set_mode =  icom_set_mode,
+    .get_mode =  icom_get_mode,
     .set_vfo =  icom_set_vfo,
-//    .get_vfo =  icom_get_vfo,
+    .get_vfo =  icom_get_vfo,
     .set_ant =  icom_set_ant,
     .get_ant =  icom_get_ant,
 

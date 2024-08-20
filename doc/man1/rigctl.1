@@ -81,8 +81,7 @@ Use
 .I device
 as the file name of the port connected to the radio.
 .IP
-Often a serial port, but could be a USB to serial adapter.  Typically
-.IR /dev/ttyS0 ", " /dev/ttyS1 ", " /dev/ttyUSB0 ,
+Typically /dev/ttyS0 ", " /dev/ttyS1 ", " /dev/ttyUSB0 ,
 etc. on Linux,
 .IR COM1 ", " COM2 ,
 etc. on MS Windows.  The BSD flavors and Mac OS/X have their own designations.
@@ -725,9 +724,10 @@ Option returned depends on rig..for Icom is likely the RX only flag.
 .BR b ", " send_morse " \(aq" \fIMorse\fP \(aq
 Send
 .RI \(aq Morse \(aq
-symbols.  For Yaesu rigs use memory#.
+symbols.  For Yaesu rigs use memory#1-5 or up to 50 char msg
 .EX
 Example from command line:  rigctl -m 3073 -r /dev/ttyUSB0 b "CQ CQ DE ME"
+Yaesu example to send message#1: rigctl -m 1035 -r /dev/ttyUSB0 b 1
 .
 .TP
 .BR 0xbb ", " stop_morse "
@@ -940,7 +940,7 @@ Level is a token: \(oqPREAMP\(cq, \(oqATT\(cq, \(oqVOXDELAY\(cq, \(oqAF\(cq,
 \(oqALC\(cq, \(oqSTRENGTH\(cq, \(oqRFPOWER_METER\(cq, \(oqCOMPMETER\(cq, \(oqVD_METER\(cq, \(oqID_METER\(cq,
 \(oqNOTCHF_RAW\(cq, \(oqMONITOR_GAIN\(cq, \(oqNQ\(cq, \(oqRFPOWER_METER_WATTS\(cq, \(oqSPECTRUM_MODE\(cq,
 \(oqSPECTRUM_SPAN\(cq, \(oqSPECTRUM_EDGE_LOW\(cq, \(oqSPECTRUM_EDGE_HIGH\(cq, \(oqSPECTRUM_SPEED\(cq,
-\(oqSPECTRUM_REF\(cq, \(oqSPECTRUM_AVG\(cq, \(oqSPECTRUM_ATT\(cq, \(oqTEMP_METER\(cq, \(oqBAND_SELECT\(cq,
+\(oqSPECTRUM_REF\(cq, \(oqSPECTRUM_AVG\(cq, \(oqSPECTRUM_ATT\(cq, \(oqTEMP_METER\(cq, \(oqBANDSELECT\(cq,
 \(oqUSB_AF\(cq.
 .IP
 The Level Value can be a float or an integer value.  For the AGC token the
@@ -970,7 +970,7 @@ Seconds
     VOXDELAY(ds), BKINDL(ms), BKIN_DLYMS(ms)
 
 Raw info from rig
-    RAWSTR, BAND_SELECT (subject to change -- index right now but may convert to band name)
+    RAWSTR, BANDSELECT (subject to change -- index right now but may convert to band name)
 
 SWR
     SWR
@@ -1168,7 +1168,7 @@ VFO reset, \(oq4\(cq = Memory Clear reset, \(oq8\(cq = Master reset.
 .IP
 Since these values are defined as a bitmask in
 .IR include/hamlib/rig.h ,
-it should be possible to AND these values together to do multiple resets at
+it should be possible to OR these values together to do multiple resets at
 once, if the backend supports it or supports a reset action via rig control at
 all.
 .
@@ -1273,7 +1273,8 @@ For binary protocols enter values as \\0xAA\\0xBB.  Expect a
 .RI \(aq Reply \(aq
 from the radio which will likely be a binary block or an ASCII string
 depending on the radio's protocol (see your radio's computer control
-documentation).
+documentation). If you are testing a protocol like SmartSDR where there
+are spaces in the commands use quote, e.g.  w "C0|set slice 0 tx=1"
 .IP
 The command terminator, set by the
 .B send-cmd-term
@@ -1281,11 +1282,11 @@ option above, will terminate each command string sent to the radio.  This
 character should not be a part of the input string.
 .
 .TP
-.BR W ", " send_cmd_rx " \(aq" \fICmd\fP\(aq " " \fI[nbytes or terminator char\FP
+.BR W ", " send_cmd_rx " \(aq" \fICmd\fP\(aq " " \fInbytes_or_terminator_char\fP
 Send a raw command string to the radio and expect nbytes returned or the terminator char (e.g. ;).
 .IP
 This is useful for testing and troubleshooting radio commands and responses when
-developing a backend.  If the # of bytes requested is <= the number actually returned no timeout will occur.
+developing a backend.  If the # of bytes requested is <= the number actually returned no timeout will occur. If a char is provided it will be used to terminate reading the string so ';' is popular for Kenwood/Yaesu commands for example.
 .IP
 The command argument can have no spaces in it.
 For binary protocols enter values as \\0xAA\\0xBB.  Expect a
@@ -1423,6 +1424,18 @@ Can also use 1,2,3,4
 .EX
 Reads GPIO1, GPIO2, GPIO3, GPIO4 on the GPIO ptt port
 Can also use 1,2,3,4
+.
+.TP
+.BR skip_init
+.EX
+Skips rig initialization -- useful when executing commands with rigctl to speed up things
+.
+.TP
+.BR freq_skip " " 'skip'
+.EX
+When skip!=0 skips setting freq on TX_VFO when in RX and on RX_VFO when in TX -- for use with gpredict and rigs that do not have TARGETABLE_VFO
+.
+.SH READLINE
 .
 .SH READLINE
 .

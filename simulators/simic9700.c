@@ -6,10 +6,12 @@
 // gcc -static -I../include -g -Wall -o simicom simicom.c -L../../build/src/.libs -lhamlib -lwsock32 -lws2_32
 #define _XOPEN_SOURCE 700
 // since we are POSIX here we need this
+#if 0
 struct ip_mreq
 {
     int dummy;
 };
+#endif
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -22,6 +24,7 @@ struct ip_mreq
 #include "../src/misc.h"
 #include <termios.h>
 #include <unistd.h>
+#include "sim.h"
 
 
 #define BUFSIZE 256
@@ -48,8 +51,9 @@ int satmode = 0;
 int agc_time = 1;
 int ovf_status = 0;
 int powerstat = 1;
+int keyspd = 90;
 
-void dumphex(unsigned char *buf, int n)
+void dumphex(const unsigned char *buf, int n)
 {
     for (int i = 0; i < n; ++i) { printf("%02x ", buf[i]); }
 
@@ -92,7 +96,7 @@ again:
         }
     }
 
-    printf("Error??? c=x%02x\n", c);
+    printf("Error %s\n", strerror(errno));
 
     return 0;
 }
@@ -100,7 +104,12 @@ again:
 void frameParse(int fd, unsigned char *frame, int len)
 {
     double freq;
-    int n = 0;
+
+    if (len == 0)
+    {
+        printf("%s: len==0\n", __func__);
+        return;
+    }
 
     dumphex(frame, len);
 
@@ -131,7 +140,7 @@ void frameParse(int fd, unsigned char *frame, int len)
 
         if (powerstat)
         {
-            n = write(fd, frame, 11);
+            WRITE(fd, frame, 11);
         }
 
         break;
@@ -151,7 +160,7 @@ void frameParse(int fd, unsigned char *frame, int len)
         }
 
         frame[7] = 0xfd;
-        n = write(fd, frame, 8);
+        WRITE(fd, frame, 8);
         break;
 
     case 0x05:
@@ -163,7 +172,7 @@ void frameParse(int fd, unsigned char *frame, int len)
 
         frame[4] = 0xfb;
         frame[5] = 0xfd;
-        n = write(fd, frame, 6);
+        WRITE(fd, frame, 6);
         break;
 
     case 0x06:
@@ -172,7 +181,7 @@ void frameParse(int fd, unsigned char *frame, int len)
 
         frame[4] = 0xfb;
         frame[5] = 0xfd;
-        n = write(fd, frame, 6);
+        WRITE(fd, frame, 6);
         break;
 
     case 0x07:
@@ -192,7 +201,7 @@ void frameParse(int fd, unsigned char *frame, int len)
 
         frame[4] = 0xfb;
         frame[5] = 0xfd;
-        n = write(fd, frame, 6);
+        WRITE(fd, frame, 6);
         break;
 
     case 0x0f:
@@ -204,14 +213,14 @@ void frameParse(int fd, unsigned char *frame, int len)
         {
             printf("get split %d\n", 1);
             frame[7] = 0xfd;
-            n = write(fd, frame, 8);
+            WRITE(fd, frame, 8);
         }
         else
         {
             printf("set split %d\n", 1);
             frame[4] = 0xfb;
             frame[5] = 0xfd;
-            n = write(fd, frame, 6);
+            WRITE(fd, frame, 6);
         }
 
         break;
@@ -232,9 +241,9 @@ void frameParse(int fd, unsigned char *frame, int len)
         frame[5] = ant_curr;
         frame[6] = ant_option;
         frame[7] = 0xfd;
-        printf("write 8 bytes\n");
+        printf("WRITE 8 bytes\n");
         dump_hex(frame, 8);
-        n = write(fd, frame, 8);
+        WRITE(fd, frame, 8);
         break;
 
     case 0x14:
@@ -248,7 +257,7 @@ void frameParse(int fd, unsigned char *frame, int len)
             {
                 frame[6] = 0xfb;
                 dumphex(frame, 7);
-                n = write(fd, frame, 7);
+                WRITE(fd, frame, 7);
                 printf("ACK x14 x08\n");
             }
             else
@@ -256,7 +265,7 @@ void frameParse(int fd, unsigned char *frame, int len)
                 to_bcd(&frame[6], (long long)128, 2);
                 frame[8] = 0xfb;
                 dumphex(frame, 9);
-                n = write(fd, frame, 9);
+                WRITE(fd, frame, 9);
                 printf("SEND x14 x08\n");
             }
 
@@ -270,9 +279,28 @@ void frameParse(int fd, unsigned char *frame, int len)
 
             to_bcd(&frame[6], (long long)power_level, 2);
             frame[8] = 0xfd;
-            n = write(fd, frame, 9);
+            WRITE(fd, frame, 9);
             break;
         }
+
+    case 0x0c:
+        if (frame[6] != 0xfd)
+        {
+            frame[6] = 0xfb;
+            dumphex(frame, 7);
+            WRITE(fd, frame, 7);
+            printf("ACK x14 x0c\n");
+        }
+        else
+        {
+            frame[6] = 0;
+            frame[7] = keyspd;
+            frame[8] = 0xfd;
+            dumphex(frame, 9);
+            WRITE(fd, frame, 9);
+            printf("SEND x14 x0c\n");
+        }
+
 
         break;
 
@@ -284,7 +312,7 @@ void frameParse(int fd, unsigned char *frame, int len)
         case 0x07:
             frame[6] = ovf_status;
             frame[7] = 0xfd;
-            n = write(fd, frame, 8);
+            WRITE(fd, frame, 8);
             ovf_status = ovf_status == 0 ? 1 : 0;
             break;
 
@@ -296,7 +324,7 @@ void frameParse(int fd, unsigned char *frame, int len)
 
             to_bcd(&frame[6], (long long)meter_level, 2);
             frame[8] = 0xfd;
-            n = write(fd, frame, 9);
+            WRITE(fd, frame, 9);
             break;
         }
 
@@ -312,7 +340,7 @@ void frameParse(int fd, unsigned char *frame, int len)
             {
                 frame[6] = dualwatch;
                 frame[7] = 0xfd;
-                n = write(fd, frame, 8);
+                WRITE(fd, frame, 8);
             }
 
             break;
@@ -326,7 +354,7 @@ void frameParse(int fd, unsigned char *frame, int len)
             {
                 frame[6] = satmode;
                 frame[7] = 0xfd;
-                n = write(fd, frame, 8);
+                WRITE(fd, frame, 8);
             }
 
             break;
@@ -337,13 +365,13 @@ void frameParse(int fd, unsigned char *frame, int len)
     case 0x18: // miscellaneous things
         frame[5] = 1;
         frame[6] = 0xfd;
-        n = write(fd, frame, 7);
+        WRITE(fd, frame, 7);
         break;
 
     case 0x19: // miscellaneous things
         frame[5] = 0x94;
         frame[6] = 0xfd;
-        n = write(fd, frame, 7);
+        WRITE(fd, frame, 7);
         break;
 
     case 0x1a: // miscellaneous things
@@ -354,7 +382,7 @@ void frameParse(int fd, unsigned char *frame, int len)
             else { frame[6] = widthB; }
 
             frame[7] = 0xfd;
-            n = write(fd, frame, 8);
+            WRITE(fd, frame, 8);
             break;
 
         case 0x04: // AGC TIME
@@ -364,7 +392,7 @@ void frameParse(int fd, unsigned char *frame, int len)
             {
                 frame[6] = agc_time;
                 frame[7] = 0xfd;
-                n = write(fd, frame, 8);
+                WRITE(fd, frame, 8);
             }
             else
             {
@@ -372,7 +400,7 @@ void frameParse(int fd, unsigned char *frame, int len)
                 agc_time = frame[6];
                 frame[4] = 0xfb;
                 frame[5] = 0xfd;
-                n = write(fd, frame, 6);
+                WRITE(fd, frame, 6);
             }
 
             break;
@@ -380,7 +408,7 @@ void frameParse(int fd, unsigned char *frame, int len)
         case 0x07: // satmode
             frame[4] = 0;
             frame[7] = 0xfd;
-            n = write(fd, frame, 8);
+            WRITE(fd, frame, 8);
             break;
 
         }
@@ -395,14 +423,14 @@ void frameParse(int fd, unsigned char *frame, int len)
             {
                 frame[6] = ptt;
                 frame[7] = 0xfd;
-                n = write(fd, frame, 8);
+                WRITE(fd, frame, 8);
             }
             else
             {
                 ptt = frame[6];
                 frame[7] = 0xfb;
                 frame[8] = 0xfd;
-                n = write(fd, frame, 9);
+                WRITE(fd, frame, 9);
             }
 
             break;
@@ -442,8 +470,8 @@ void frameParse(int fd, unsigned char *frame, int len)
             frame2[8] = 0x03;
             frame2[9] = 0x00;
             frame2[10] = 0xfd;
-            n = write(fd, frame2, 11);
-            n = write(fd, frame, 12);
+            WRITE(fd, frame2, 11);
+            WRITE(fd, frame, 12);
         }
         else
         {
@@ -455,7 +483,7 @@ void frameParse(int fd, unsigned char *frame, int len)
 
             frame[4] = 0xfb;
             frame[5] = 0xfd;
-            n = write(fd, frame, 6);
+            WRITE(fd, frame, 6);
             // send async frame
             frame[2] = 0x00; // async freq
             frame[3] = 0xa2;
@@ -466,7 +494,7 @@ void frameParse(int fd, unsigned char *frame, int len)
             frame[8] = 0x96;
             frame[9] = 0x12;
             frame[10] = 0xfd;
-            n = write(fd, frame, 11);
+            WRITE(fd, frame, 11);
         }
 
         break;
@@ -482,7 +510,7 @@ void frameParse(int fd, unsigned char *frame, int len)
             frame[7] = frame[5] == 0 ? datamodeA : datamodeB;
             frame[8] = 0xfb;
             frame[9] = 0xfd;
-            n = write(fd, frame, 10);
+            WRITE(fd, frame, 10);
         }
         else
         {
@@ -501,7 +529,7 @@ void frameParse(int fd, unsigned char *frame, int len)
 
             frame[4] = 0xfb;
             frame[5] = 0xfd;
-            n = write(fd, frame, 6);
+            WRITE(fd, frame, 6);
         }
 
         printf("\n");
@@ -512,24 +540,21 @@ void frameParse(int fd, unsigned char *frame, int len)
         printf("x25 send nak\n");
         frame[4] = 0xfa;
         frame[5] = 0xfd;
-        n = write(fd, frame, 6);
+        WRITE(fd, frame, 6);
         break;
 
     case 0x26:
         printf("x26 send nak\n");
         frame[4] = 0xfa;
         frame[5] = 0xfd;
-        n = write(fd, frame, 6);
+        WRITE(fd, frame, 6);
         break;
 #endif
 
     default: printf("cmd 0x%02x unknown\n", frame[4]);
     }
 
-    if (n == 0) { printf("Write failed=%s\n", strerror(errno)); }
-
 // don't care about the rig type yet
-
 }
 
 #if defined(WIN32) || defined(_WIN32)

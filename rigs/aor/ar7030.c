@@ -66,7 +66,7 @@
 
 static int rxr_writeByte(RIG *rig, unsigned char c)
 {
-    return write_block(&rig->state.rigport, &c, 1);
+    return write_block(RIGPORT(rig), &c, 1);
 }
 
 
@@ -75,14 +75,14 @@ static int rxr_readByte(RIG *rig)
     unsigned char response[1];
     const unsigned char buf[] = {0x71}; // Read command
     int retval;
-    retval = write_block(&rig->state.rigport, buf, 1);
+    retval = write_block(RIGPORT(rig), buf, 1);
 
     if (retval != RIG_OK)
     {
         return retval;
     }
 
-    retval = read_block(&rig->state.rigport, response, 1);
+    retval = read_block(RIGPORT(rig), response, 1);
 
     if (retval != RIG_OK)
     {
@@ -190,7 +190,8 @@ static void Execute_Routine_2_1(RIG *rig, char mp, char ad, int numSteps)
 }
 #endif
 // Routine 3    Set passband    Setup all IF parameters from filter, pbsval and bfoval bytes.
-static void Execute_Routine_3_1(RIG *rig, char mp, char ad, unsigned int numSteps)
+static void Execute_Routine_3_1(RIG *rig, char mp, char ad,
+                                unsigned int numSteps)
 {
     setLock(rig, 1);      //Set Lock Level
     setMemPtr(rig, mp, ad);   //page, address
@@ -269,16 +270,17 @@ static void Execute_Routine_6_1(RIG *rig, char mp, char ad, int numSteps)
 static int Execute_Routine_14(RIG *rig)
 {
     unsigned char response[1];
+    hamlib_port_t *rp = RIGPORT(rig);
     const unsigned char buf[] = {0x2e}; // Read command
     int retval;
-    retval = write_block(&rig->state.rigport, buf, 1);
+    retval = write_block(rp, buf, 1);
 
     if (retval != RIG_OK)
     {
         return retval;
     }
 
-    retval = read_block(&rig->state.rigport, response, 1);
+    retval = read_block(rp, response, 1);
 
     if (retval != RIG_OK)
     {
@@ -772,7 +774,7 @@ static int ar7030_reset(RIG *rig, reset_t reset)
 
 
 
-const struct rig_caps ar7030_caps =
+struct rig_caps ar7030_caps =
 {
     RIG_MODEL(RIG_MODEL_AR7030),
     .model_name = "AR7030",
@@ -802,7 +804,6 @@ const struct rig_caps ar7030_caps =
     .has_get_parm =  AR7030_PARM,
     .has_set_parm =  RIG_PARM_NONE,
     .level_gran =  {
-        // cppcheck-suppress *
         [LVL_RAWSTR] = { .min = { .i = 0 }, .max = { .i = 255 } },
     },
     .parm_gran =  {},

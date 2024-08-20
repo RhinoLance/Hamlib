@@ -18,6 +18,7 @@
  *   Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  *
  */
+/* SPDX-License-Identifier: LGPL-2.1-or-later */
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -53,6 +54,7 @@
 static struct kenwood_priv_caps  ts870s_priv_caps  =
 {
     .cmdtrm =  EOM_KEN,
+    .tone_table_base = 1,
 };
 
 /* only the ts870s and ts2000 support get_vfo with the 'FR;' command
@@ -437,7 +439,7 @@ static int ts870s_get_level(RIG *rig, vfo_t vfo, setting_t level, value_t *val)
         else
         {
             for (i = 0; i < lvl && i < HAMLIB_MAXDBLSTSIZ; i++)
-                if (rig->state.attenuator[i] == 0)
+                if (STATE(rig)->attenuator[i] == 0)
                 {
                     rig_debug(RIG_DEBUG_ERR, "ts870s_get_level: "
                               "unexpected att level %d\n", lvl);
@@ -449,7 +451,7 @@ static int ts870s_get_level(RIG *rig, vfo_t vfo, setting_t level, value_t *val)
                 return -RIG_EINTERNAL;
             }
 
-            val->i = rig->state.attenuator[i - 1];
+            val->i = STATE(rig)->attenuator[i - 1];
         }
 
         break;
@@ -528,12 +530,11 @@ static int ts870s_get_level(RIG *rig, vfo_t vfo, setting_t level, value_t *val)
 /*
  * ts870s rig capabilities.
  * Notice that some rigs share the same functions.
- * Also this struct is READONLY!
  * RIT: Variable Range ±9.99 kHz
  *
  * part of infos comes from .http = //www.kenwood.net/
  */
-const struct rig_caps ts870s_caps =
+struct rig_caps ts870s_caps =
 {
     RIG_MODEL(RIG_MODEL_TS870S),
     .model_name = "TS-870S",
@@ -565,7 +566,7 @@ const struct rig_caps ts870s_caps =
     .level_gran =
     {
 #include "level_gran_kenwood.h"
-     [LVL_ATT] = { .min = { .i = 0 }, .max = { .i = 18 }, .step = { .i = 6 } },
+        [LVL_ATT] = { .min = { .i = 0 }, .max = { .i = 18 }, .step = { .i = 6 } },
     },
     .parm_gran =  {},
     .ctcss_list =  kenwood38_ctcss_list,
@@ -586,6 +587,7 @@ const struct rig_caps ts870s_caps =
     .chan_list =  {
         {  0, 89, RIG_MTYPE_MEM  }, /* TBC */
         { 90, 99, RIG_MTYPE_EDGE },
+		{  1,  4, RIG_MTYPE_MORSE },
         RIG_CHAN_END,
     },
 

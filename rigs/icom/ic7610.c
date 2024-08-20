@@ -144,7 +144,7 @@ struct cmdparams ic7610_extcmds[] =
 int ic7610_ext_tokens[] =
 {
     TOK_DRIVE_GAIN, TOK_DIGI_SEL_FUNC, TOK_DIGI_SEL_LEVEL,
-    TOK_SCOPE_MSS, TOK_SCOPE_SDS, TOK_SCOPE_STX, TOK_SCOPE_CFQ, TOK_SCOPE_EDG, TOK_SCOPE_VBW, TOK_SCOPE_RBW, TOK_SCOPE_MKP,
+    TOK_SCOPE_MSS, TOK_SCOPE_SDS, TOK_SCOPE_STX, TOK_SCOPE_CFQ, TOK_SCOPE_EDG, TOK_SCOPE_VBW, TOK_SCOPE_RBW, TOK_SCOPE_MKP, TOK_IPP_FUNC, TOK_TX_INHIBIT_FUNC, TOK_DPP_FUNC, TOK_ICPW2_FUNC,
     TOK_BACKEND_NONE
 };
 
@@ -242,7 +242,13 @@ static const struct icom_priv_caps ic7610_priv_caps =
         },
     },
     .extcmds = ic7610_extcmds,
-    .x25_always = 1,
+    .x25x26_always = 1,
+    .x25x26_possibly = 1,
+    .x1cx03_always = 1,
+    .x1cx03_possibly = 1,
+    .x1ax03_supported = 1,
+    .mode_with_filter = 1,
+    .data_mode_supported = 1
 };
 
 
@@ -324,10 +330,12 @@ int ic7610_get_clock(RIG *rig, int *year, int *month, int *day, int *hour,
         prmbuf[0] = 0x00;
         prmbuf[1] = 0x59;
         retval = icom_transaction(rig, cmd, subcmd, prmbuf, 2, respbuf, &resplen);
+
         if (retval != RIG_OK)
         {
             return retval;
         }
+
         *hour = from_bcd(&respbuf[4], 2);
         *min = from_bcd(&respbuf[5], 2);
         *sec = 0;
@@ -336,10 +344,12 @@ int ic7610_get_clock(RIG *rig, int *year, int *month, int *day, int *hour,
         prmbuf[0] = 0x00;
         prmbuf[1] = 0x62;
         retval = icom_transaction(rig, cmd, subcmd, prmbuf, 2, respbuf, &resplen);
+
         if (retval != RIG_OK)
         {
             return retval;
         }
+
         *utc_offset = from_bcd(&respbuf[4], 2) * 100;
         *utc_offset += from_bcd(&respbuf[5], 2);
 
@@ -383,7 +393,6 @@ struct rig_caps ic7610_caps =
     .has_get_parm =  IC7610_PARMS,
     .has_set_parm =  RIG_PARM_SET(IC7610_PARMS),    /* FIXME: parms */
     .level_gran = {
-        // cppcheck-suppress *
         [LVL_RAWSTR] = { .min = { .i = 0 }, .max = { .i = 255 } },
         [LVL_VOXDELAY] = { .min = { .i = 0 }, .max = { .i = 20 }, .step = { .i = 1 } },
         [LVL_KEYSPD] = { .min = { .i = 6 }, .max = { .i = 48 }, .step = { .i = 1 } },
@@ -399,10 +408,11 @@ struct rig_caps ic7610_caps =
         [PARM_BEEP] = {.min = {.i = 0}, .max = {.i = 1}, .step = {.i = 1}},
         [PARM_TIME] = {.min = {.i = 0}, .max = {.i = 86399}, .step = {.i = 1}},
         [PARM_ANN] = {.min = {.i = 0}, .max = {.i = 2}, .step = {.i = 1}},
-        [PARM_KEYERTYPE] = {.step = {.s = "STRAIGHT, BUG, PADDLE"}},
+        [PARM_KEYERTYPE] = {.step = {.s = "STRAIGHT,BUG,PADDLE"}},
     },
 
     .ext_tokens = ic7610_ext_tokens,
+    .extfuncs = icom_ext_funcs,
     .extlevels = icom_ext_levels,
     .ctcss_list =  common_ctcss_list,
     .dcs_list =  NULL,
@@ -423,6 +433,8 @@ struct rig_caps ic7610_caps =
     .chan_list =  {
         {   1,  99, RIG_MTYPE_MEM  },
         { 100, 101, RIG_MTYPE_EDGE },    /* two by two */
+        {   1,	8, RIG_MTYPE_VOICE },
+        {   1,	8, RIG_MTYPE_MORSE },
         RIG_CHAN_END,
     },
 
@@ -559,10 +571,10 @@ struct rig_caps ic7610_caps =
 
     .set_freq =  icom_set_freq,
     .get_freq =  icom_get_freq,
-    .set_mode =  icom_set_mode_with_data,
-    .get_mode =  icom_get_mode_with_data,
+    .set_mode =  icom_set_mode,
+    .get_mode =  icom_get_mode,
     .set_vfo =  icom_set_vfo,
-//    .get_vfo =  icom_get_vfo,
+    .get_vfo =  icom_get_vfo,
     .set_ant =  icom_set_ant,
     .get_ant =  icom_get_ant,
 
@@ -578,6 +590,8 @@ struct rig_caps ic7610_caps =
     .get_ext_level =  icom_get_ext_level,
     .set_func =  icom_set_func,
     .get_func =  icom_get_func,
+    .set_ext_func =  icom_set_ext_func,
+    .get_ext_func =  icom_get_ext_func,
     .set_parm =  icom_set_parm,
     .get_parm =  icom_get_parm,
     .set_mem =  icom_set_mem,
@@ -604,6 +618,7 @@ struct rig_caps ic7610_caps =
     .stop_morse = icom_stop_morse,
     .wait_morse = rig_wait_morse,
     .send_voice_mem = icom_send_voice_mem,
+    .stop_voice_mem = icom_stop_voice_mem,
     .set_clock = ic7610_set_clock,
     .get_clock = ic7610_get_clock,
     .hamlib_check_rig_caps = HAMLIB_CHECK_RIG_CAPS

@@ -28,6 +28,7 @@
 #include "sprintflst.h"
 #include "rigctl_parse.h"
 #include "../rigs/icom/icom.h"
+#include "dumpcaps.h"
 
 void range_print(FILE *fout, const struct freq_range_list range_list[], int rx);
 int range_sanity_check(const struct freq_range_list range_list[], int rx);
@@ -70,6 +71,7 @@ static int print_ext(RIG *rig, const struct confparams *cfp, rig_ptr_t ptr)
 int dumpcaps(RIG *rig, FILE *fout)
 {
     const struct rig_caps *caps;
+    struct rig_state *rs;
     int status, i;
     int can_esplit, can_echannel;
     char freqbuf[20];
@@ -88,6 +90,7 @@ int dumpcaps(RIG *rig, FILE *fout)
     }
 
     caps = rig->caps;
+    rs = STATE(rig);
 
     fprintf(fout, "Caps dump for model: %u\n", caps->rig_model);
     fprintf(fout, "Model name:\t%s\n", caps->model_name);
@@ -247,6 +250,23 @@ int dumpcaps(RIG *rig, FILE *fout)
             "Has targetable VFO: %s\n",
             caps->targetable_vfo ? "Y" : "N");
 
+    fprintf(fout, "Targetable features:");
+    if (caps->targetable_vfo & RIG_TARGETABLE_FREQ) { fprintf(fout, " FREQ"); }
+    if (caps->targetable_vfo & RIG_TARGETABLE_MODE) { fprintf(fout, " MODE"); }
+    if (caps->targetable_vfo & RIG_TARGETABLE_TONE) { fprintf(fout, " TONE"); }
+    if (caps->targetable_vfo & RIG_TARGETABLE_FUNC) { fprintf(fout, " FUNC"); }
+    if (caps->targetable_vfo & RIG_TARGETABLE_LEVEL) { fprintf(fout, " LEVEL"); }
+    if (caps->targetable_vfo & RIG_TARGETABLE_RITXIT) { fprintf(fout, " RITXIT"); }
+    if (caps->targetable_vfo & RIG_TARGETABLE_PTT) { fprintf(fout, " PTT"); }
+    if (caps->targetable_vfo & RIG_TARGETABLE_MEM) { fprintf(fout, " MEM"); }
+    if (caps->targetable_vfo & RIG_TARGETABLE_BANK) { fprintf(fout, " BANK"); }
+    if (caps->targetable_vfo & RIG_TARGETABLE_ANT) { fprintf(fout, " ANT"); }
+    if (caps->targetable_vfo & RIG_TARGETABLE_ROOFING) { fprintf(fout, " ROOFING"); }
+    if (caps->targetable_vfo & RIG_TARGETABLE_SPECTRUM) { fprintf(fout, " SPECTRUM"); }
+    if (caps->targetable_vfo & RIG_TARGETABLE_BAND) { fprintf(fout, " BAND"); }
+    if (caps->targetable_vfo == 0) { fprintf(fout, " None"); }
+    fprintf(fout, "\n");
+
     fprintf(fout,
             "Has async data support: %s\n",
             caps->async_data_supported ? "Y" : "N");
@@ -302,8 +322,8 @@ int dumpcaps(RIG *rig, FILE *fout)
     if (priv_caps && RIG_BACKEND_NUM(rig->caps->rig_model) == RIG_ICOM
             && priv_caps->agc_levels_present)
     {
-        for (i = 0; i < HAMLIB_MAX_AGC_LEVELS && priv_caps->agc_levels[i].level != RIG_AGC_LAST
-                && priv_caps->agc_levels[i].icom_level >= 0; i++)
+        for (i = 0; i < HAMLIB_MAX_AGC_LEVELS
+                && priv_caps->agc_levels[i].level != RIG_AGC_LAST ; i++)
         {
             fprintf(fout, " %d=%s", priv_caps->agc_levels[i].level,
                     rig_stragclevel(priv_caps->agc_levels[i].level));
@@ -421,10 +441,9 @@ int dumpcaps(RIG *rig, FILE *fout)
     fprintf(fout, "Extra parameters:\n");
     rig_ext_parm_foreach(rig, print_ext, fout);
 
-
-    if (rig->state.mode_list != 0)
+    if (rs->mode_list != 0)
     {
-        rig_sprintf_mode(prntbuf, sizeof(prntbuf), rig->state.mode_list);
+        rig_sprintf_mode(prntbuf, sizeof(prntbuf), rs->mode_list);
     }
     else
     {
@@ -435,9 +454,9 @@ int dumpcaps(RIG *rig, FILE *fout)
 
     fprintf(fout, "Mode list: %s\n", prntbuf);
 
-    if (rig->state.vfo_list != 0)
+    if (rs->vfo_list != 0)
     {
-        rig_sprintf_vfo(prntbuf, sizeof(prntbuf), rig->state.vfo_list);
+        rig_sprintf_vfo(prntbuf, sizeof(prntbuf), rs->vfo_list);
     }
     else
     {
@@ -904,7 +923,7 @@ int dumpcaps(RIG *rig, FILE *fout)
 
     can_echannel = caps->set_mem
                    && ((caps->set_vfo
-                        && ((rig->state.vfo_list & RIG_VFO_MEM) == RIG_VFO_MEM))
+                        && ((rs->vfo_list & RIG_VFO_MEM) == RIG_VFO_MEM))
                        || (caps->vfo_op
                            && rig_has_vfo_op(rig, RIG_OP_TO_VFO | RIG_OP_FROM_VFO)));
 
@@ -1237,5 +1256,17 @@ int dumpconf(RIG *rig, FILE *fout)
     fprintf(fout, "model: %s\n", rig->caps->model_name);
     rig_token_foreach(rig, print_conf_list, (rig_ptr_t)rig);
 
+    return 0;
+}
+
+int dumpconf_list(RIG *rig, FILE *fout)
+{
+    rig_token_foreach(rig, print_conf_list2, (rig_ptr_t)rig);
+    return 0;
+}
+
+int dumpconf_list_rot(ROT *rot, FILE *fout)
+{
+    rot_token_foreach(rot, print_conf_list2, rot);
     return 0;
 }

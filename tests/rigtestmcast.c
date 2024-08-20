@@ -3,7 +3,7 @@
 
 #define TEST
 #ifdef TEST
-int main(int argc, char *argv[])
+int main(int argc, const char *argv[])
 {
     RIG *rig;
     rig_model_t myrig_model;
@@ -25,16 +25,19 @@ int main(int argc, char *argv[])
     }
 
 #ifdef _WIN32
-    strncpy(rig->state.rigport.pathname, "COM37", HAMLIB_FILPATHLEN - 1);
+    strncpy(RIGPORT(rig)->pathname, "COM37", HAMLIB_FILPATHLEN - 1);
 #else
-    strncpy(rig->state.rigport.pathname, "/dev/ttyUSB0", HAMLIB_FILPATHLEN - 1);
+    strncpy(RIGPORT(rig)->pathname, "/dev/ttyUSB0", HAMLIB_FILPATHLEN - 1);
 #endif
-    rig->state.rigport.parm.serial.rate = 38400;
+    RIGPORT(rig)->parm.serial.rate = 38400;
     rig_open(rig);
+    // disabled until we change this to the other multicast capability
+#if 0
     multicast_init(rig, "224.0.0.1", 4532);
-    printf("threadid=%lld\n", (long long)rig->state.multicast->threadid);
-    pthread_join(rig->state.multicast->threadid, NULL);
+    printf("threadid=%lld\n", (long long)STATE(rig)->multicast->threadid);
+    pthread_join(STATE(rig)->multicast->threadid, NULL);
     pthread_exit(NULL);
+#endif
     return 0;
 }
 #endif

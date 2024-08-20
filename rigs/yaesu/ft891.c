@@ -125,12 +125,12 @@ int ft891_ext_tokens[] =
 /*
  * FT-891 rig capabilities
  */
-const struct rig_caps ft891_caps =
+struct rig_caps ft891_caps =
 {
     RIG_MODEL(RIG_MODEL_FT891),
     .model_name =         "FT-891",
     .mfg_name =           "Yaesu",
-    .version =            NEWCAT_VER ".9",
+    .version =            NEWCAT_VER ".10",
     .copyright =          "LGPL",
     .status =             RIG_STATUS_STABLE,
     .rig_type =           RIG_TYPE_TRANSCEIVER,
@@ -156,16 +156,15 @@ const struct rig_caps ft891_caps =
     .level_gran =
     {
 #include "level_gran_yaesu.h"
-        // cppcheck-suppress *
-        [LVL_RF] = { .min = { .f = 0 }, .max = { .f = 1.0f }, .step = { .f = 1.0f/30.0f } },
-        [LVL_MICGAIN] = { .min = { .f = 0 }, .max = { .f = 1.0 }, .step = { .f = 1.0f/100.0f } },
-        [LVL_SQL] = { .min = { .f = 0 }, .max = { .f = 1.0 }, .step = { .f = 1.0f/100.0f } },
-        [LVL_MONITOR_GAIN] = { .min = { .f = 0 }, .max = { .f = 1.0 }, .step = { .f = 1.0f/100.0f } },
-        [LVL_RFPOWER] = { .min = { .f = .05 }, .max = { .f = 1.0 }, .step = { .f = 1.0f/100.0f } },
+        [LVL_RF] = { .min = { .f = 0 }, .max = { .f = 1.0f }, .step = { .f = 1.0f / 30.0f } },
+        [LVL_MICGAIN] = { .min = { .f = 0 }, .max = { .f = 1.0 }, .step = { .f = 1.0f / 100.0f } },
+        [LVL_SQL] = { .min = { .f = 0 }, .max = { .f = 1.0 }, .step = { .f = 1.0f / 100.0f } },
+        [LVL_MONITOR_GAIN] = { .min = { .f = 0 }, .max = { .f = 1.0 }, .step = { .f = 1.0f / 100.0f } },
+        [LVL_RFPOWER] = { .min = { .f = .05 }, .max = { .f = 1.0 }, .step = { .f = 1.0f / 100.0f } },
     },
     .parm_gran =  {
         [PARM_BANDSELECT] = {.min = {.f = 0.0f}, .max = {.f = 1.0f}, .step = {.s = "BAND160M,BAND80M,BANDUNUSED,BAND40M,BAND30M,BAND20M,BAND17M,BAND15M,BAND12M,BAND10M,BAND6M,BANDRGEN,BANDMW"}}
-        },
+    },
 
     .ctcss_list =         common_ctcss_list,
     .dcs_list =           NULL,
@@ -186,6 +185,7 @@ const struct rig_caps ft891_caps =
     .str_cal =            FT891_STR_CAL,
     .chan_list =          {
         {   1,  99, RIG_MTYPE_MEM,  NEWCAT_MEM_CAP },
+        {   1,	5,  RIG_MTYPE_MORSE },
         RIG_CHAN_END,
     },
 
@@ -357,7 +357,6 @@ const struct rig_caps ft891_caps =
 static int ft891_set_split_vfo(RIG *rig, vfo_t vfo, split_t split, vfo_t tx_vfo)
 {
     struct newcat_priv_data *priv;
-    struct rig_state *state;
     unsigned char ci;
     int err;
 
@@ -372,8 +371,7 @@ static int ft891_set_split_vfo(RIG *rig, vfo_t vfo, split_t split, vfo_t tx_vfo)
     rig_debug(RIG_DEBUG_TRACE, "%s: passed split = 0x%02x\n", __func__, split);
     rig_debug(RIG_DEBUG_TRACE, "%s: passed tx_vfo = 0x%02x\n", __func__, tx_vfo);
 
-    priv = (struct newcat_priv_data *)rig->state.priv;
-    state = &rig->state;
+    priv = (struct newcat_priv_data *)STATE(rig)->priv;
 
     // RX VFO and TX VFO cannot be the same, no support for MEM as TX VFO
     if (vfo == tx_vfo || tx_vfo == RIG_VFO_MEM)
@@ -397,7 +395,7 @@ static int ft891_set_split_vfo(RIG *rig, vfo_t vfo, split_t split, vfo_t tx_vfo)
 
     SNPRINTF(priv->cmd_str, sizeof(priv->cmd_str), "ST%c;", ci);
 
-    if (RIG_OK != (err = write_block(&state->rigport,
+    if (RIG_OK != (err = write_block(RIGPORT(rig),
                                      (unsigned char *) priv->cmd_str, strlen(priv->cmd_str))))
     {
         rig_debug(RIG_DEBUG_ERR, "%s: write_block err = %d\n", __func__, err);
@@ -438,7 +436,7 @@ static int ft891_get_split_vfo(RIG *rig, vfo_t vfo, split_t *split,
 
     rig_debug(RIG_DEBUG_TRACE, "%s: passed vfo = 0x%02x\n", __func__, vfo);
 
-    priv = (struct newcat_priv_data *)rig->state.priv;
+    priv = (struct newcat_priv_data *)STATE(rig)->priv;
 
     SNPRINTF(priv->cmd_str, sizeof(priv->cmd_str), "ST;");
 
@@ -495,7 +493,7 @@ static int ft891_get_split_mode(RIG *rig, vfo_t vfo, rmode_t *tx_mode,
         return -RIG_EINVAL;
     }
 
-    priv = (struct newcat_priv_data *)rig->state.priv;
+    priv = (struct newcat_priv_data *)STATE(rig)->priv;
 
     SNPRINTF(priv->cmd_str, sizeof(priv->cmd_str), "OI;");
 
@@ -533,7 +531,6 @@ static int ft891_set_split_mode(RIG *rig, vfo_t vfo, rmode_t tx_mode,
                                 pbwidth_t tx_width)
 {
     struct newcat_priv_data *priv;
-    struct rig_state *state;
     freq_t b_freq;
     int err;
 
@@ -544,15 +541,13 @@ static int ft891_set_split_mode(RIG *rig, vfo_t vfo, rmode_t tx_mode,
         return -RIG_EINVAL;
     }
 
-    state = &rig->state;
-
     rig_debug(RIG_DEBUG_TRACE, "%s: passed vfo = %s\n", __func__, rig_strvfo(vfo));
     rig_debug(RIG_DEBUG_TRACE, "%s: passed mode = %s\n", __func__,
               rig_strrmode(tx_mode));
     rig_debug(RIG_DEBUG_TRACE, "%s: passed width = %d Hz\n", __func__,
               (int)tx_width);
 
-    priv = (struct newcat_priv_data *)rig->state.priv;
+    priv = (struct newcat_priv_data *)STATE(rig)->priv;
 
     // Remember VFOB frequency
     if (RIG_OK != (err = newcat_get_freq(rig, RIG_VFO_B, &b_freq)))
@@ -569,7 +564,7 @@ static int ft891_set_split_mode(RIG *rig, vfo_t vfo, rmode_t tx_mode,
     // Copy A to B
     SNPRINTF(priv->cmd_str, sizeof(priv->cmd_str), "AB;");
 
-    if (RIG_OK != (err = write_block(&state->rigport,
+    if (RIG_OK != (err = write_block(RIGPORT(rig),
                                      (unsigned char *) priv->cmd_str, strlen(priv->cmd_str))))
     {
         rig_debug(RIG_DEBUG_VERBOSE, "%s:%d write_block err = %d\n", __func__, __LINE__,
@@ -604,7 +599,7 @@ static int ft891_set_mode(RIG *rig, vfo_t vfo, rmode_t mode, pbwidth_t width)
     // We will always make VFOB match VFOA mode
     newcat_set_mode(rig, RIG_VFO_A, mode, width);
 
-    priv = (struct newcat_priv_data *)rig->state.priv;
+    priv = (struct newcat_priv_data *)STATE(rig)->priv;
 
     // Copy A to B
     SNPRINTF(priv->cmd_str, sizeof(priv->cmd_str), "AB;");
@@ -626,6 +621,6 @@ static int ft891_init(RIG *rig)
 
     if (ret != RIG_OK) { return ret; }
 
-    rig->state.current_vfo = RIG_VFO_A;
+    STATE(rig)->current_vfo = RIG_VFO_A;
     return RIG_OK;
 }

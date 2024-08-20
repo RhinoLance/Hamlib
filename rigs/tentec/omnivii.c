@@ -119,12 +119,12 @@ static int tt588_set_ant(RIG *rig, vfo_t vfo, ant_t ant);
  *
  * Protocol is documented at the tentec site
  */
-const struct rig_caps tt588_caps =
+struct rig_caps tt588_caps =
 {
     RIG_MODEL(RIG_MODEL_TT588),
     .model_name = "TT-588 Omni VII",
     .mfg_name =  "Ten-Tec",
-    .version =  "20220718.0",
+    .version =  "20231002.0",
     .copyright =  "LGPL",
     .status =  RIG_STATUS_STABLE,
     .rig_type =  RIG_TYPE_TRANSCEIVER,
@@ -257,19 +257,19 @@ static int tt588_transaction(RIG *rig, const char *cmd, int cmd_len, char *data,
                              const int *data_len)
 {
     int i, retval = -RIG_EINTERNAL;
-    struct  rig_state *rs = &rig->state;
+    hamlib_port_t *rp = RIGPORT(rig);
 
     // The original file had "A few XX's" due to sync problems
     // So I put this in a try loop which should, hopefully, never be seen
     for (i = 0; i < 3; ++i) // We'll try 3 times
     {
         char xxbuf[32];
-        rig_flush(&rs->rigport);
+        rig_flush(rp);
 
         // We add 1 to data_len here for the null byte inserted by read_string eventually
         // That way all the callers can use the expected response length for the cmd_len parameter here
         // Callers all need to ensure they have enough room in data for this
-        retval = write_block(&rs->rigport, (unsigned char *) cmd, cmd_len);
+        retval = write_block(rp, (unsigned char *) cmd, cmd_len);
 
         if (retval == RIG_OK)
         {
@@ -284,7 +284,7 @@ static int tt588_transaction(RIG *rig, const char *cmd, int cmd_len, char *data,
 
             if (data)
             {
-                retval = read_string(&rs->rigport, (unsigned char *) data, (*data_len) + 1,
+                retval = read_string(rp, (unsigned char *) data, (*data_len) + 1,
                                      term, strlen(term), 0,
                                      1);
 
@@ -293,9 +293,9 @@ static int tt588_transaction(RIG *rig, const char *cmd, int cmd_len, char *data,
                     return RIG_OK;
                 }
 
-                if (retval == -RIG_ETIMEOUT) { return retval; }
-
                 rig_debug(RIG_DEBUG_ERR, "%s: read_string failed, try#%d\n", __func__, i + 1);
+
+                return retval;
             }
             else
             {
@@ -307,9 +307,9 @@ static int tt588_transaction(RIG *rig, const char *cmd, int cmd_len, char *data,
             rig_debug(RIG_DEBUG_ERR, "%s: write_block failed, try#%d\n", __func__, i + 1);
         }
 
-        write_block(&rs->rigport, (unsigned char *) "XX" EOM,
+        write_block(rp, (unsigned char *) "XX" EOM,
                     3); // we wont' worry about the response here
-        retval = read_string(&rs->rigport, (unsigned char *) xxbuf, sizeof(xxbuf), "",
+        retval = read_string(rp, (unsigned char *) xxbuf, sizeof(xxbuf), "",
                              0, 0, 1); // this should timeout
 
         if (retval != RIG_OK)
@@ -330,16 +330,16 @@ int tt588_init(RIG *rig)
     struct tt588_priv_data *priv;
 
     rig_debug(RIG_DEBUG_VERBOSE, "%s:\n", __func__);
-    rig->state.priv = (struct tt588_priv_data *) calloc(1, sizeof(
+    STATE(rig)->priv = (struct tt588_priv_data *) calloc(1, sizeof(
                           struct tt588_priv_data));
 
-    if (!rig->state.priv)
+    if (!STATE(rig)->priv)
     {
         /* whoops! memory shortage! */
         return -RIG_ENOMEM;
     }
 
-    priv = rig->state.priv;
+    priv = STATE(rig)->priv;
 
     memset(priv, 0, sizeof(struct tt588_priv_data));
 
@@ -380,7 +380,7 @@ static char which_vfo(const RIG *rig, vfo_t vfo)
 int tt588_get_vfo(RIG *rig, vfo_t *vfo)
 {
     static int getinfo = TRUE;
-    struct tt588_priv_data *priv = (struct tt588_priv_data *) rig->state.priv;
+    const struct tt588_priv_data *priv = (struct tt588_priv_data *) STATE(rig)->priv;
 
     if (getinfo)   // this is the first call to this package so we do this here
     {
@@ -407,7 +407,7 @@ int tt588_get_vfo(RIG *rig, vfo_t *vfo)
  */
 int tt588_set_vfo(RIG *rig, vfo_t vfo)
 {
-    struct tt588_priv_data *priv = (struct tt588_priv_data *)rig->state.priv;
+    struct tt588_priv_data *priv = (struct tt588_priv_data *)STATE(rig)->priv;
 
     rig_debug(RIG_DEBUG_VERBOSE, "%s: vfo=%s\n", __func__, rig_strvfo(vfo));
 
@@ -461,7 +461,7 @@ int tt588_get_freq(RIG *rig, vfo_t vfo, freq_t *freq)
 
     int resp_len, retval;
     unsigned char cmdbuf[16], respbuf[32];
-    struct tt588_priv_data *priv = (struct tt588_priv_data *) rig->state.priv;
+    const struct tt588_priv_data *priv = (struct tt588_priv_data *) STATE(rig)->priv;
 
     if (vfo == RIG_VFO_CURR)
     {
@@ -485,12 +485,6 @@ int tt588_get_freq(RIG *rig, vfo_t vfo, freq_t *freq)
         return retval;
     }
 
-    if (resp_len != 6)
-    {
-        rig_debug(RIG_DEBUG_ERR, "%s: unexpected length '%d'\n", __func__, resp_len);
-        return -RIG_EPROTO;
-    }
-
     if ((respbuf[0] == 'A' || respbuf[0] == 'B') && respbuf[5] == 0x0d)
     {
         *freq = (respbuf[1] << 24)
@@ -510,7 +504,7 @@ int tt588_get_freq(RIG *rig, vfo_t vfo, freq_t *freq)
 
 /*
  * tt588_set_freq
- * assumes rig!=NULL, rig->state.priv!=NULL
+ * assumes rig!=NULL, STATE(rig)->priv!=NULL
  */
 int tt588_set_freq(RIG *rig, vfo_t vfo, freq_t freq)
 {
@@ -603,7 +597,7 @@ int tt588_get_mode(RIG *rig, vfo_t vfo, rmode_t *mode, pbwidth_t *width)
     int resp_len, retval;
     unsigned char cmdbuf[16], respbuf[32];
     char ttmode;
-    struct tt588_priv_data *priv = (struct tt588_priv_data *) rig->state.priv;
+    const struct tt588_priv_data *priv = (struct tt588_priv_data *) STATE(rig)->priv;
 
 
     rig_debug(RIG_DEBUG_VERBOSE, "%s: vfo=%s\n", __func__, rig_strvfo(vfo));
@@ -626,18 +620,12 @@ int tt588_get_mode(RIG *rig, vfo_t vfo, rmode_t *mode, pbwidth_t *width)
                                (char *) respbuf,
                                &resp_len);
 
-    if (resp_len > 4)
-    {
-        resp_len = 4;
-        respbuf[4] = 0;
-    }
-
     if (retval != RIG_OK)
     {
         return retval;
     }
 
-    if (respbuf[0] != 'M' || resp_len != 4)
+    if (respbuf[0] != 'M')
     {
         rig_debug(RIG_DEBUG_ERR, "%s: unexpected answer '%s'\n", __func__, respbuf);
         return -RIG_EPROTO;
@@ -690,7 +678,7 @@ int tt588_get_mode(RIG *rig, vfo_t vfo, rmode_t *mode, pbwidth_t *width)
         return retval;
     }
 
-    if (respbuf[0] != 'W' && resp_len != 3)
+    if (respbuf[0] != 'W')
     {
         rig_debug(RIG_DEBUG_ERR, "%s: unexpected answer '%s'\n", __func__, respbuf);
         return -RIG_EPROTO;
@@ -810,7 +798,7 @@ int tt588_set_mode(RIG *rig, vfo_t vfo, rmode_t mode, pbwidth_t width)
     unsigned char cmdbuf[32], respbuf[32], ttmode;
     int resp_len, retval;
 
-    struct tt588_priv_data *priv = (struct tt588_priv_data *) rig->state.priv;
+    const struct tt588_priv_data *priv = (struct tt588_priv_data *) STATE(rig)->priv;
 
     rig_debug(RIG_DEBUG_VERBOSE, "%s: vfo=%s mode=%s width=%d\n", __func__,
               rig_strvfo(vfo), rig_strrmode(mode), (int)width);
@@ -929,7 +917,7 @@ int tt588_get_level(RIG *rig, vfo_t vfo, setting_t level, value_t *val)
         }
 
         // top bit of lvlbuf[1] should be on if transmitting
-        if (lvlbuf[0] != 'S' || lvl_len != 4 || lvlbuf[3] != 0x0d
+        if (lvlbuf[0] != 'S' || lvlbuf[3] != 0x0d
                 || ((lvlbuf[1] & 0x80) == 0))
         {
             val->f = 99; // infinity
@@ -965,7 +953,7 @@ int tt588_get_level(RIG *rig, vfo_t vfo, setting_t level, value_t *val)
             return retval;
         }
 
-        if (lvlbuf[0] != 'S' || lvl_len != 6)
+        if (lvlbuf[0] != 'S')
         {
             rig_debug(RIG_DEBUG_ERR, "%s: unexpected answer '%s'\n", __func__, lvlbuf);
             return -RIG_EPROTO;
@@ -1025,7 +1013,7 @@ int tt588_get_level(RIG *rig, vfo_t vfo, setting_t level, value_t *val)
             return retval;
         }
 
-        if (lvlbuf[0] != 'G' || lvl_len != 3 || lvlbuf[2] != 0x0d)
+        if (lvlbuf[0] != 'G' || lvlbuf[2] != 0x0d)
         {
             rig_debug(RIG_DEBUG_ERR, "%s: unexpected answer '%s'\n", __func__, lvlbuf);
             return -RIG_EPROTO;
@@ -1365,12 +1353,6 @@ int tt588_get_split_vfo(RIG *rig, vfo_t vfo, split_t *split, vfo_t *tx_vfo)
     resp_len = 3;
     retval = tt588_transaction(rig, cmdbuf, strlen(cmdbuf), respbuf, &resp_len);
 
-    if (resp_len != 3)
-    {
-        rig_debug(RIG_DEBUG_ERR, "%s: bad response length, expected %d, got %d\n",
-                  __func__, 3, resp_len);
-    }
-
     // respbuf returns "N0" or "N1" for split off/on
     if (retval != RIG_OK)
     {
@@ -1491,12 +1473,6 @@ int tt588_get_xit(RIG *rig, vfo_t vfo, shortfreq_t *xit)
     SNPRINTF(cmdbuf, sizeof(cmdbuf), "?L" EOM);
     resp_len = 5;
     retval = tt588_transaction(rig, cmdbuf, strlen(cmdbuf), respbuf, &resp_len);
-
-    if (resp_len != 5)
-    {
-        rig_debug(RIG_DEBUG_ERR, "%s: bad response length, expected %d, got %d\n",
-                  __func__, 5, resp_len);
-    }
 
     if (retval != RIG_OK)
     {

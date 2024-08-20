@@ -50,7 +50,7 @@
 typedef char ncboolean;
 
 /* shared function version */
-#define NEWCAT_VER "20230805"
+#define NEWCAT_VER "20240203"
 
 /* Hopefully large enough for future use, 128 chars plus '\0' */
 #define NEWCAT_DATA_LEN                 129
@@ -129,6 +129,8 @@ struct newcat_priv_data
     int poweron; /* to prevent powering on more than once */
     int question_mark_response_means_rejected; /* the question mark response has multiple meanings */
     char front_rear_status; /* e.g. FTDX5000 EX103 status */
+    int split_st_command_missing; /* is ST command gone?  assume not until proven otherwise */
+    int band_index;
 };
 
 /*
@@ -171,9 +173,9 @@ int newcat_cleanup(RIG *rig);
 int newcat_open(RIG *rig);
 int newcat_close(RIG *rig);
 
-int newcat_set_conf(RIG *rig, token_t token, const char *val);
-int newcat_get_conf(RIG *rig, token_t token, char *val);
-int newcat_get_conf2(RIG *rig, token_t token, char *val, int val_len);
+int newcat_set_conf(RIG *rig, hamlib_token_t token, const char *val);
+int newcat_get_conf(RIG *rig, hamlib_token_t token, char *val);
+int newcat_get_conf2(RIG *rig, hamlib_token_t token, char *val, int val_len);
 
 int newcat_set_freq(RIG *rig, vfo_t vfo, freq_t freq);
 int newcat_get_freq(RIG *rig, vfo_t vfo, freq_t *freq);
@@ -232,8 +234,8 @@ rmode_t newcat_rmode(char mode);
 char newcat_modechar(rmode_t rmode);
 rmode_t newcat_rmode_width(RIG *rig, vfo_t vfo, char mode, pbwidth_t *width);
 
-int newcat_set_ext_level(RIG *rig, vfo_t vfo, token_t token, value_t val);
-int newcat_get_ext_level(RIG *rig, vfo_t vfo, token_t token, value_t *val);
+int newcat_set_ext_level(RIG *rig, vfo_t vfo, hamlib_token_t token, value_t val);
+int newcat_get_ext_level(RIG *rig, vfo_t vfo, hamlib_token_t token, value_t *val);
 
 int newcat_send_morse(RIG *rig, vfo_t vfo, const char *msg);
 int newcat_send_voice_mem(RIG *rig, vfo_t vfo, int ch);
@@ -253,5 +255,11 @@ int newcat_scan(RIG *rig, vfo_t vfo, scan_t scan, int ch);
 #define TOK_CONTOUR_FREQ   TOKEN_BACKEND(105)
 #define TOK_CONTOUR_LEVEL  TOKEN_BACKEND(106)
 #define TOK_CONTOUR_WIDTH  TOKEN_BACKEND(107)
+#define TOK_MAXPOWER_HF    TOKEN_BACKEND(108)
+#define TOK_MAXPOWER_6M    TOKEN_BACKEND(109)
+#define TOK_MAXPOWER_4M    TOKEN_BACKEND(110)
+#define TOK_MAXPOWER_AM    TOKEN_BACKEND(111)
+#define TOK_MAXPOWER_VHF   TOKEN_BACKEND(112)
+#define TOK_MAXPOWER_UHF   TOKEN_BACKEND(113)
 
 #endif /* _NEWCAT_H */

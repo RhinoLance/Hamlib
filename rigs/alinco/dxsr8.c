@@ -75,7 +75,7 @@ int dxsr8_set_ptt(RIG *rig, vfo_t vfo, ptt_t ptt);
  *      https://yo5ptd.wordpress.com/2017/02/12/alinco-dx-sr8/
  * for a partially documented protocol
  */
-const struct rig_caps dxsr8_caps =
+struct rig_caps dxsr8_caps =
 {
     RIG_MODEL(RIG_MODEL_DXSR8),
     .model_name =       "DX-SR8",
@@ -223,7 +223,7 @@ const struct rig_caps dxsr8_caps =
 
 /*
  * dxsr8_transaction
- * We assume that rig!=NULL, rig->state!= NULL, data!=NULL, data_len!=NULL
+ * We assume that rig!=NULL, RIGPORT(rig)!= NULL, data!=NULL, data_len!=NULL
  * Otherwise, you'll get a nice seg fault. You've been warned!
  * TODO: error case handling
  */
@@ -235,7 +235,7 @@ int dxsr8_transaction(RIG *rig,
 {
 
     int retval;
-    struct rig_state *rs;
+    hamlib_port_t *rp = RIGPORT(rig);
     char replybuf[BUFSZ + 1];
     int reply_len;
 
@@ -246,11 +246,9 @@ int dxsr8_transaction(RIG *rig,
         return -RIG_EINTERNAL;
     }
 
-    rs = &rig->state;
+    rig_flush(rp);
 
-    rig_flush(&rs->rigport);
-
-    retval = write_block(&rs->rigport, (unsigned char *) cmd, cmd_len);
+    retval = write_block(rp, (unsigned char *) cmd, cmd_len);
 
     if (retval != RIG_OK)
     {
@@ -261,7 +259,7 @@ int dxsr8_transaction(RIG *rig,
      * Transceiver sends an echo of cmd followed by a CR/LF
      * TODO: check whether cmd and echobuf match (optional)
      */
-    retval = read_string(&rs->rigport, (unsigned char *) replybuf, BUFSZ,
+    retval = read_string(rp, (unsigned char *) replybuf, BUFSZ,
                          LF, strlen(LF), 0, 1);
 
     if (retval < 0)
@@ -270,7 +268,7 @@ int dxsr8_transaction(RIG *rig,
     }
 
 
-    retval = read_string(&rs->rigport, (unsigned char *) replybuf, BUFSZ,
+    retval = read_string(rp, (unsigned char *) replybuf, BUFSZ,
                          LF, strlen(LF), 0, 1);
 
     if (retval < 0)
@@ -344,7 +342,6 @@ int dxsr8_set_freq(RIG *rig, vfo_t vfo, freq_t freq)
         return -RIG_EINVAL;
     }
 
-    // cppcheck-suppress *
     SNPRINTF(cmd, sizeof(cmd), AL "~RW_RXF%08"PRIll EOM, (int64_t)freq);
     return dxsr8_transaction(rig, cmd, strlen(cmd), NULL, NULL);
 }
@@ -357,7 +354,7 @@ int dxsr8_get_freq(RIG *rig, vfo_t vfo, freq_t *freq)
 {
     int retval, data_len;
 
-    char cmd[] = AL "~RR_RXF" EOM;
+    const char cmd[] = AL "~RR_RXF" EOM;
     char freqbuf[BUFSZ];
 
     retval = dxsr8_transaction(rig, cmd, strlen(cmd), freqbuf, &data_len);

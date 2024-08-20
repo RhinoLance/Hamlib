@@ -6,10 +6,12 @@
 // gcc -static -I../include -g -Wall -o simicom simicom.c -L../../build/src/.libs -lhamlib -lwsock32 -lws2_32
 #define _XOPEN_SOURCE 700
 // since we are POSIX here we need this
+#if 0
 struct ip_mreq
 {
     int dummy;
 };
+#endif
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -51,7 +53,7 @@ int transceive = 0;
 int keyspd = 20;
 int rigtime = 1230;
 
-void dumphex(unsigned char *buf, int n)
+void dumphex(const unsigned char *buf, int n)
 {
     for (int i = 0; i < n; ++i) { printf("%02x ", buf[i]); }
 
@@ -101,7 +103,7 @@ again:
         }
     }
 
-    printf("Error??? c=x%02x\n", c);
+    printf("Error %s\n", strerror(errno));
 
     return 0;
 }
@@ -110,6 +112,12 @@ void frameParse(int fd, unsigned char *frame, int len)
 {
     double freq;
     int n = 0;
+
+    if (len == 0)
+    {
+        printf("%s: len==0\n", __func__);
+        return;
+    }
 
     dumphex(frame, len);
 
@@ -124,6 +132,8 @@ void frameParse(int fd, unsigned char *frame, int len)
     {
     case 0x03:
 
+        if (frame[5] != 0xfd)
+        {
         //from_bcd(frameackbuf[2], (civ_731_mode ? 4 : 5) * 2);
         if (current_vfo == RIG_VFO_A || current_vfo == RIG_VFO_MAIN)
         {
@@ -141,6 +151,18 @@ void frameParse(int fd, unsigned char *frame, int len)
         if (powerstat)
         {
             n = write(fd, frame, 11);
+            dump_hex(frame, 11);
+        }
+        else
+        {
+            if (current_vfo==RIG_VFO_A)
+            freqA = from_bcd(&frame[5], (civ_731_mode ? 4 : 5) * 2);
+            else
+            freqB = from_bcd(&frame[5], (civ_731_mode ? 4 : 5) * 2);
+            frame[4] = 0xfb;
+            frame[5] = 0xfd;
+            n = write(fd, frame, 6);
+        }
         }
 
         break;
@@ -402,8 +424,8 @@ void frameParse(int fd, unsigned char *frame, int len)
                 {
                     printf("0x05 0x00 0x92 received\n");
                     transceive = frame[8];
-                    frame[6] = 0xfb;
-                    frame[7] = 0xfd;
+                    frame[4] = 0xfb;
+                    frame[5] = 0xfd;
                     n = write(fd, frame, 8);
                 }
                 else

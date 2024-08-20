@@ -92,7 +92,7 @@ static tone_t ft736_ctcss_list[] =
  *  - AQS
  */
 
-const struct rig_caps ft736_caps =
+struct rig_caps ft736_caps =
 {
     RIG_MODEL(RIG_MODEL_FT736R),
     .model_name =         "FT-736R",
@@ -220,27 +220,27 @@ const struct rig_caps ft736_caps =
  */
 int ft736_open(RIG *rig)
 {
-    unsigned char cmd[YAESU_CMD_LENGTH] = { 0x00, 0x00, 0x00, 0x00, 0x00};
+    const unsigned char cmd[YAESU_CMD_LENGTH] = { 0x00, 0x00, 0x00, 0x00, 0x00};
     struct ft736_priv_data *priv;
     int ret;
 
     rig_debug(RIG_DEBUG_TRACE, "%s called\n", __func__);
 
-    rig->state.priv = (struct ft736_priv_data *) calloc(1,
+    STATE(rig)->priv = (struct ft736_priv_data *) calloc(1,
                       sizeof(struct ft736_priv_data));
 
-    if (!rig->state.priv)
+    if (!STATE(rig)->priv)
     {
         return -RIG_ENOMEM;
     }
 
-    priv = rig->state.priv;
+    priv = STATE(rig)->priv;
 
     priv->split = RIG_SPLIT_OFF;
 
 
     /* send Ext Cntl ON: Activate CAT */
-    ret = write_block(&rig->state.rigport, cmd, YAESU_CMD_LENGTH);
+    ret = write_block(RIGPORT(rig), cmd, YAESU_CMD_LENGTH);
 
     if (ret != RIG_OK)
     {
@@ -252,14 +252,14 @@ int ft736_open(RIG *rig)
 
 int ft736_close(RIG *rig)
 {
-    unsigned char cmd[YAESU_CMD_LENGTH] = { 0x80, 0x80, 0x80, 0x80, 0x80};
+    const unsigned char cmd[YAESU_CMD_LENGTH] = { 0x80, 0x80, 0x80, 0x80, 0x80};
 
     rig_debug(RIG_DEBUG_TRACE, "%s called\n", __func__);
 
-    free(rig->state.priv);
+    free(STATE(rig)->priv);
 
     /* send Ext Cntl OFF: Deactivate CAT */
-    return write_block(&rig->state.rigport, cmd, YAESU_CMD_LENGTH);
+    return write_block(RIGPORT(rig), cmd, YAESU_CMD_LENGTH);
 
 }
 
@@ -267,7 +267,7 @@ int ft736_close(RIG *rig)
 int ft736_set_freq(RIG *rig, vfo_t vfo, freq_t freq)
 {
     unsigned char cmd[YAESU_CMD_LENGTH] = { 0x00, 0x00, 0x00, 0x00, 0x01};
-    struct ft736_priv_data *priv = (struct ft736_priv_data *)rig->state.priv;
+    const struct ft736_priv_data *priv = (struct ft736_priv_data *)STATE(rig)->priv;
     int retval;
 
     // we will assume requesting to set VFOB is split mode
@@ -287,7 +287,7 @@ int ft736_set_freq(RIG *rig, vfo_t vfo, freq_t freq)
         cmd[0] = (cmd[0] & 0x0f) | 0xc0;
     }
 
-    retval = write_block(&rig->state.rigport, cmd, YAESU_CMD_LENGTH);
+    retval = write_block(RIGPORT(rig), cmd, YAESU_CMD_LENGTH);
 
     if (retval == RIG_OK) { rig_set_cache_freq(rig, vfo, freq); }
 
@@ -298,7 +298,7 @@ int ft736_get_freq(RIG *rig, vfo_t vfo, freq_t *freq)
 {
     rig_debug(RIG_DEBUG_VERBOSE, "%s: called\n", __func__);
 
-    if (vfo == RIG_VFO_A || vfo == RIG_VFO_MAIN) { *freq = rig->state.cache.freqMainA; }
+    if (vfo == RIG_VFO_A || vfo == RIG_VFO_MAIN) { *freq = CACHE(rig)->freqMainA; }
     else { rig_get_cache_freq(rig, vfo, freq, NULL); }
 
     return RIG_OK;
@@ -318,7 +318,7 @@ int ft736_set_mode(RIG *rig, vfo_t vfo, rmode_t mode, pbwidth_t width)
 {
     unsigned char cmd[YAESU_CMD_LENGTH] = { 0x00, 0x00, 0x00, 0x00, 0x07};
     unsigned char md;
-    struct ft736_priv_data *priv = (struct ft736_priv_data *)rig->state.priv;
+    const struct ft736_priv_data *priv = (struct ft736_priv_data *)STATE(rig)->priv;
 
     if (vfo == RIG_VFO_B) { return ft736_set_split_mode(rig, vfo, mode, width); }
 
@@ -358,7 +358,7 @@ int ft736_set_mode(RIG *rig, vfo_t vfo, rmode_t mode, pbwidth_t width)
     cmd[0] = md;
 
     /* Mode set */
-    return write_block(&rig->state.rigport, cmd, YAESU_CMD_LENGTH);
+    return write_block(RIGPORT(rig), cmd, YAESU_CMD_LENGTH);
 }
 
 
@@ -366,7 +366,7 @@ int ft736_set_mode(RIG *rig, vfo_t vfo, rmode_t mode, pbwidth_t width)
 int ft736_set_split_vfo(RIG *rig, vfo_t vfo, split_t split, vfo_t tx_vfo)
 {
     unsigned char cmd[YAESU_CMD_LENGTH] = { 0x00, 0x00, 0x00, 0x00, 0x8e};
-    struct ft736_priv_data *priv = (struct ft736_priv_data *)rig->state.priv;
+    struct ft736_priv_data *priv = (struct ft736_priv_data *)STATE(rig)->priv;
     int ret;
 
     /*
@@ -375,7 +375,7 @@ int ft736_set_split_vfo(RIG *rig, vfo_t vfo, split_t split, vfo_t tx_vfo)
      */
     cmd[4] = split == RIG_SPLIT_ON ? 0x0e : 0x8e;
 
-    ret = write_block(&rig->state.rigport, cmd, YAESU_CMD_LENGTH);
+    ret = write_block(RIGPORT(rig), cmd, YAESU_CMD_LENGTH);
 
     if (ret == RIG_OK)
     {
@@ -391,7 +391,7 @@ int ft736_set_split_freq(RIG *rig, vfo_t vfo, freq_t freq)
 
     int retval = rig_set_split_vfo(rig, RIG_VFO_A, RIG_SPLIT_ON, RIG_VFO_B);
 
-    if (retval != RIG_OK) { RETURNFUNC(retval); }
+    if (retval != RIG_OK) { return retval; }
 
     /* store bcd format in cmd (MSB) */
     to_bcd_be(cmd, freq / 10, 8);
@@ -403,7 +403,7 @@ int ft736_set_split_freq(RIG *rig, vfo_t vfo, freq_t freq)
     }
 
     /* Frequency set */
-    return write_block(&rig->state.rigport, cmd, YAESU_CMD_LENGTH);
+    return write_block(RIGPORT(rig), cmd, YAESU_CMD_LENGTH);
 }
 
 
@@ -444,7 +444,7 @@ int ft736_set_split_mode(RIG *rig, vfo_t vfo, rmode_t mode, pbwidth_t width)
     cmd[0] = md;
 
     /* Mode set */
-    return write_block(&rig->state.rigport, cmd, YAESU_CMD_LENGTH);
+    return write_block(RIGPORT(rig), cmd, YAESU_CMD_LENGTH);
 }
 
 
@@ -457,17 +457,18 @@ int ft736_set_ptt(RIG *rig, vfo_t vfo, ptt_t ptt)
     cmd[4] = ptt == RIG_PTT_ON ? 0x08 : 0x88;
 
     /* Tx/Rx set */
-    return write_block(&rig->state.rigport, cmd, YAESU_CMD_LENGTH);
+    return write_block(RIGPORT(rig), cmd, YAESU_CMD_LENGTH);
 }
 
 int ft736_get_dcd(RIG *rig, vfo_t vfo, dcd_t *dcd)
 {
     unsigned char cmd[YAESU_CMD_LENGTH] = { 0x00, 0x00, 0x00, 0x00, 0xe7};
     int retval;
+    hamlib_port_t *rp = RIGPORT(rig);
 
-    rig_flush(&rig->state.rigport);
+    rig_flush(rp);
 
-    retval = write_block(&rig->state.rigport, cmd, YAESU_CMD_LENGTH);
+    retval = write_block(rp, cmd, YAESU_CMD_LENGTH);
 
     if (retval < 0)
     {
@@ -475,7 +476,7 @@ int ft736_get_dcd(RIG *rig, vfo_t vfo, dcd_t *dcd)
     }
 
     /* read back the 1 byte */
-    retval = read_block(&rig->state.rigport, cmd, 5);
+    retval = read_block(rp, cmd, 5);
 
     if (retval < 1)
     {
@@ -494,16 +495,17 @@ int ft736_get_level(RIG *rig, vfo_t vfo, setting_t level, value_t *val)
 {
     unsigned char cmd[YAESU_CMD_LENGTH] = { 0x00, 0x00, 0x00, 0x00, 0xf7};
     int retval;
+    hamlib_port_t *rp = RIGPORT(rig);
 
     if (level != RIG_LEVEL_RAWSTR)
     {
         return -RIG_EINVAL;
     }
 
-    rig_flush(&rig->state.rigport);
+    rig_flush(rp);
 
     /* send Test S-meter cmd to rig  */
-    retval = write_block(&rig->state.rigport, cmd, YAESU_CMD_LENGTH);
+    retval = write_block(rp, cmd, YAESU_CMD_LENGTH);
 
     if (retval < 0)
     {
@@ -511,7 +513,7 @@ int ft736_get_level(RIG *rig, vfo_t vfo, setting_t level, value_t *val)
     }
 
     /* read back the 1 byte */
-    retval = read_block(&rig->state.rigport, cmd, 5);
+    retval = read_block(rp, cmd, 5);
 
     if (retval < 1)
     {
@@ -553,7 +555,7 @@ int ft736_set_rptr_shift(RIG *rig, vfo_t vfo, rptr_shift_t shift)
         return -RIG_EINVAL;
     }
 
-    return write_block(&rig->state.rigport, cmd, YAESU_CMD_LENGTH);
+    return write_block(RIGPORT(rig), cmd, YAESU_CMD_LENGTH);
 }
 
 int ft736_set_rptr_offs(RIG *rig, vfo_t vfo, shortfreq_t offs)
@@ -564,7 +566,7 @@ int ft736_set_rptr_offs(RIG *rig, vfo_t vfo, shortfreq_t offs)
     to_bcd_be(cmd, offs / 10, 8);
 
     /* Offset set */
-    return write_block(&rig->state.rigport, cmd, YAESU_CMD_LENGTH);
+    return write_block(RIGPORT(rig), cmd, YAESU_CMD_LENGTH);
 }
 
 int ft736_set_func(RIG *rig, vfo_t vfo, setting_t func, int status)
@@ -585,7 +587,7 @@ int ft736_set_func(RIG *rig, vfo_t vfo, setting_t func, int status)
         return -RIG_EINVAL;
     }
 
-    return write_block(&rig->state.rigport, cmd, YAESU_CMD_LENGTH);
+    return write_block(RIGPORT(rig), cmd, YAESU_CMD_LENGTH);
 }
 
 int ft736_set_ctcss_tone(RIG *rig, vfo_t vfo, tone_t tone)
@@ -608,7 +610,7 @@ int ft736_set_ctcss_tone(RIG *rig, vfo_t vfo, tone_t tone)
 
     cmd[0] = 0x3e - i;
 
-    return write_block(&rig->state.rigport, cmd, YAESU_CMD_LENGTH);
+    return write_block(RIGPORT(rig), cmd, YAESU_CMD_LENGTH);
 }
 
 int ft736_set_ctcss_sql(RIG *rig, vfo_t vfo, tone_t tone)

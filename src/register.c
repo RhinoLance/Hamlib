@@ -90,6 +90,8 @@ DEFINE_INITRIG_BACKEND(codan);
 DEFINE_INITRIG_BACKEND(gomspace);
 DEFINE_INITRIG_BACKEND(mds);
 DEFINE_INITRIG_BACKEND(anytone);
+DEFINE_INITRIG_BACKEND(motorola);
+DEFINE_INITRIG_BACKEND(commradio);
 //! @endcond
 
 #ifdef HAVE_WINRADIO
@@ -150,6 +152,8 @@ static struct
     { RIG_GOMSPACE, RIG_BACKEND_GOMSPACE, RIG_FUNCNAM(gomspace) },
     { RIG_MDS, RIG_BACKEND_MDS, RIG_FUNCNAMA(mds) },
     { RIG_ANYTONE, RIG_BACKEND_ANYTONE, RIG_FUNCNAMA(anytone) },
+    { RIG_MOTOROLA, RIG_BACKEND_MOTOROLA, RIG_FUNCNAMA(motorola) },
+	{ RIG_COMMRADIO, RIG_BACKEND_COMMRADIO, RIG_FUNCNAM(commradio) },
     { 0, NULL }, /* end */
 };
 
@@ -161,7 +165,7 @@ static struct
 //! @cond Doxygen_Suppress
 struct rig_list
 {
-    const struct rig_caps *caps;
+    struct rig_caps *caps;
     struct rig_list *next;
 };
 //! @endcond
@@ -189,7 +193,7 @@ static int rig_lookup_backend(rig_model_t rig_model);
  * Basically, this is a hash insert function that doesn't check for dup!
  */
 //! @cond Doxygen_Suppress
-int HAMLIB_API rig_register(const struct rig_caps *caps)
+int HAMLIB_API rig_register(struct rig_caps *caps)
 {
     int hval;
     struct rig_list *p;
@@ -228,7 +232,6 @@ int HAMLIB_API rig_register(const struct rig_caps *caps)
     p->next = rig_hash_table[hval];
     rig_hash_table[hval] = p;
 
-    //RETURNFUNC(RIG_OK);
     return RIG_OK;
 }
 //! @endcond
@@ -239,7 +242,7 @@ int HAMLIB_API rig_register(const struct rig_caps *caps)
  */
 
 //! @cond Doxygen_Suppress
-const struct rig_caps *HAMLIB_API rig_get_caps(rig_model_t rig_model)
+struct rig_caps *HAMLIB_API rig_get_caps(rig_model_t rig_model)
 {
     struct rig_list *p;
 
@@ -389,7 +392,7 @@ int HAMLIB_API rig_unregister(rig_model_t rig_model)
  * executes cfunc on all the elements stored in the rig hash list
  */
 //! @cond Doxygen_Suppress
-int HAMLIB_API rig_list_foreach(int (*cfunc)(const struct rig_caps *,
+int HAMLIB_API rig_list_foreach(int (*cfunc)(struct rig_caps *,
                                 rig_ptr_t),
                                 rig_ptr_t data)
 {

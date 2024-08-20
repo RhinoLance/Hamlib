@@ -120,6 +120,42 @@ const struct confparams ft991_ext_levels[] =
         RIG_CONF_NUMERIC,
         { .n = { .min = 1, .max = 11, .step = 1 } },
     },
+    {
+        TOK_MAXPOWER_HF,
+        "MAXPOWER_HF",
+        "Maxpower HF",
+        "Maxpower HF",
+        NULL,
+        RIG_CONF_INT,
+        { .n = { .min = 5, .max = 100, .step = 1 } },
+    },
+    {
+        TOK_MAXPOWER_6M,
+        "MAXPOWER_6M",
+        "Maxpower 6m",
+        "Maxpower 6m",
+        NULL,
+        RIG_CONF_INT,
+        { .n = { .min = 5, .max = 100, .step = 1 } },
+    },
+    {
+        TOK_MAXPOWER_VHF,
+        "MAXPOWER_VHF",
+        "Maxpower VHF",
+        "Maxpower VHF",
+        NULL,
+        RIG_CONF_INT,
+        { .n = { .min = 5, .max = 50, .step = 1 } },
+    },
+    {
+        TOK_MAXPOWER_UHF,
+        "MAXPOWER_UHF",
+        "Maxpower UHF",
+        "Maxpower UHF",
+        NULL,
+        RIG_CONF_NUMERIC,
+        { .n = { .min = 5, .max = 50, .step = 1 } },
+    },
     { RIG_CONF_END, NULL, }
 };
 
@@ -127,13 +163,14 @@ int ft991_ext_tokens[] =
 {
     TOK_KEYER, TOK_APF_FREQ, TOK_APF_WIDTH,
     TOK_CONTOUR, TOK_CONTOUR_FREQ, TOK_CONTOUR_LEVEL, TOK_CONTOUR_WIDTH,
+    TOK_MAXPOWER_HF, TOK_MAXPOWER_6M, TOK_MAXPOWER_UHF, TOK_MAXPOWER_VHF,
     TOK_BACKEND_NONE
 };
 
 /*
  * FT-991 rig capabilities
  */
-const struct rig_caps ft991_caps =
+struct rig_caps ft991_caps =
 {
     RIG_MODEL(RIG_MODEL_FT991),
     .model_name =         "FT-991",
@@ -163,14 +200,14 @@ const struct rig_caps ft991_caps =
     .has_set_parm =       RIG_PARM_BANDSELECT,
     .level_gran = {
 #include "level_gran_yaesu.h"
-        [LVL_MICGAIN] = { .min = { .f = 0 }, .max = { .f = 1.0 }, .step = { .f = 1.0f/100.0f } },
-        [LVL_SQL] = { .min = { .f = 0 }, .max = { .f = 1.0 }, .step = { .f = 1.0f/100.0f } },
-        [LVL_MONITOR_GAIN] = { .min = { .f = 0 }, .max = { .f = 1.0 }, .step = { .f = 1.0f/100.0f } },
-        [LVL_RFPOWER] = { .min = { .f = .05 }, .max = { .f = 1.0 }, .step = { .f = 1.0f/100.0f } },
+        [LVL_MICGAIN] = { .min = { .f = 0 }, .max = { .f = 1.0 }, .step = { .f = 1.0f / 100.0f } },
+        [LVL_SQL] = { .min = { .f = 0 }, .max = { .f = 1.0 }, .step = { .f = 1.0f / 100.0f } },
+        [LVL_MONITOR_GAIN] = { .min = { .f = 0 }, .max = { .f = 1.0 }, .step = { .f = 1.0f / 100.0f } },
+        [LVL_RFPOWER] = { .min = { .f = .05 }, .max = { .f = 1.0 }, .step = { .f = 1.0f / 100.0f } },
     },
     .parm_gran =  {
-        [PARM_BANDSELECT] = {.min = {.f = 0.0f}, .max = {.f = 1.0f}, .step = {.s = "BAND160M,BAND80M,BANDUNUSED,BAND40M,BAND30M,BAND20M,BAND17M,BAND15M,BAND12M,BAND10M,BAND6M,BANDGEN,BANDMW,BANDUNUSED,BANDAIR,BAND70CM,BAND33CM"}}
-        },
+        [PARM_BANDSELECT] = {.step = {.s = "BAND160M,BAND80M,BANDUNUSED,BAND40M,BAND30M,BAND20M,BAND17M,BAND15M,BAND12M,BAND10M,BAND6M,BANDGEN,BANDMW,BANDUNUSED,BANDAIR,BAND70CM,BAND33CM"}}
+    },
 
     .ctcss_list =         common_ctcss_list,
     .dcs_list =           common_dcs_list,
@@ -194,8 +231,11 @@ const struct rig_caps ft991_caps =
     .comp_meter_cal =     FT991_COMP_CAL,
     .chan_list =          {
         {   1,  99, RIG_MTYPE_MEM,  NEWCAT_MEM_CAP },
-        { 100, 117, RIG_MTYPE_EDGE, NEWCAT_MEM_CAP },    /* two by two */
-        RIG_CHAN_END,
+        {   100,  117, RIG_MTYPE_MEM,  NEWCAT_MEM_CAP }, // P1L-P9U PMS channels
+        {   118,  127, RIG_MTYPE_MEM,  NEWCAT_MEM_CAP }, // 5xx 5MHz band
+        {   1,	    5, RIG_MTYPE_VOICE },
+        {   1,	    5, RIG_MTYPE_MORSE },
+            RIG_CHAN_END,
     },
 
     // Rig only has 1 model
@@ -418,7 +458,7 @@ ft991_set_split_freq(RIG *rig, vfo_t vfo, freq_t tx_freq)
         return (rval);
     }
 
-    if (rig->state.cache.freqMainB == tx_freq)
+    if (CACHE(rig)->freqMainB == tx_freq)
     {
         rig_debug(RIG_DEBUG_TRACE, "%s: freq %.0f already set on VFOB\n", __func__,
                   tx_freq);
@@ -507,7 +547,7 @@ static int ft991_get_split_mode(RIG *rig, vfo_t vfo, rmode_t *tx_mode,
         return -RIG_EINVAL;
     }
 
-    priv = (struct newcat_priv_data *)rig->state.priv;
+    priv = (struct newcat_priv_data *)STATE(rig)->priv;
     rdata = (ft991info *)priv->ret_data;
 
     SNPRINTF(priv->cmd_str, sizeof(priv->cmd_str), "OI;");
@@ -595,7 +635,7 @@ static int ft991_set_split_mode(RIG *rig, vfo_t vfo, rmode_t tx_mode,
         return -RIG_EINVAL;
     }
 
-    if (rig->state.cache.modeMainB == tx_mode)
+    if (CACHE(rig)->modeMainB == tx_mode)
     {
         rig_debug(RIG_DEBUG_TRACE, "%s: mode %s already set on VFOB\n", __func__,
                   rig_strrmode(tx_mode));
@@ -620,7 +660,7 @@ static int ft991_set_split_mode(RIG *rig, vfo_t vfo, rmode_t tx_mode,
     }
 
 
-    state = &rig->state;
+    state = STATE(rig);
 
     rig_debug(RIG_DEBUG_TRACE, "%s: passed vfo = %s\n", __func__,
               rig_strvfo(vfo));
@@ -679,14 +719,14 @@ static int ft991_init(RIG *rig)
 
     if (ret != RIG_OK) { return ret; }
 
-    rig->state.current_vfo = RIG_VFO_A;
+    STATE(rig)->current_vfo = RIG_VFO_A;
     return RIG_OK;
 }
 
 static int ft991_find_current_vfo(RIG *rig, vfo_t *vfo, tone_t *enc_dec_mode,
                                   rmode_t *mode)
 {
-    struct newcat_priv_data *priv = (struct newcat_priv_data *)rig->state.priv;
+    struct newcat_priv_data *priv = (struct newcat_priv_data *)STATE(rig)->priv;
     ft991info *info = (ft991info *)priv->ret_data;
     int err;
 
@@ -736,7 +776,7 @@ static int ft991_find_current_vfo(RIG *rig, vfo_t *vfo, tone_t *enc_dec_mode,
 
 static int ft991_get_enabled_ctcss_dcs_mode(RIG *rig)
 {
-    struct newcat_priv_data *priv = (struct newcat_priv_data *)rig->state.priv;
+    struct newcat_priv_data *priv = (struct newcat_priv_data *)STATE(rig)->priv;
     int err;
 
     rig_debug(RIG_DEBUG_TRACE, "%s called\n", __func__);
@@ -754,7 +794,7 @@ static int ft991_get_enabled_ctcss_dcs_mode(RIG *rig)
 
 static int ft991_set_ctcss_tone(RIG *rig, vfo_t vfo, tone_t tone)
 {
-    struct newcat_priv_data *priv = (struct newcat_priv_data *)rig->state.priv;
+    struct newcat_priv_data *priv = (struct newcat_priv_data *)STATE(rig)->priv;
     int i;
     ncboolean tone_match;
 
@@ -791,7 +831,7 @@ static int ft991_set_ctcss_tone(RIG *rig, vfo_t vfo, tone_t tone)
 
 static int ft991_get_ctcss_tone(RIG *rig, vfo_t vfo, tone_t *tone)
 {
-    struct newcat_priv_data *priv = (struct newcat_priv_data *)rig->state.priv;
+    struct newcat_priv_data *priv = (struct newcat_priv_data *)STATE(rig)->priv;
     int ret;
     int t;
     int ret_data_len;
@@ -857,7 +897,7 @@ static int ft991_get_ctcss_tone(RIG *rig, vfo_t vfo, tone_t *tone)
 
 static int ft991_set_ctcss_sql(RIG *rig, vfo_t vfo, tone_t tone)
 {
-    struct newcat_priv_data *priv = (struct newcat_priv_data *)rig->state.priv;
+    struct newcat_priv_data *priv = (struct newcat_priv_data *)STATE(rig)->priv;
     int err;
     rmode_t rmode;
 
@@ -906,7 +946,7 @@ static int ft991_set_ctcss_sql(RIG *rig, vfo_t vfo, tone_t tone)
 
 static int ft991_get_ctcss_sql(RIG *rig, vfo_t vfo, tone_t *tone)
 {
-    struct newcat_priv_data *priv = (struct newcat_priv_data *)rig->state.priv;
+    struct newcat_priv_data *priv = (struct newcat_priv_data *)STATE(rig)->priv;
     int ret;
     int t;
     int ret_data_len;
@@ -959,7 +999,7 @@ static int ft991_get_ctcss_sql(RIG *rig, vfo_t vfo, tone_t *tone)
 
 static int ft991_get_dcs_code(RIG *rig, vfo_t vfo, tone_t *code)
 {
-    struct newcat_priv_data *priv = (struct newcat_priv_data *)rig->state.priv;
+    struct newcat_priv_data *priv = (struct newcat_priv_data *)STATE(rig)->priv;
     int err;
     int t;
     tone_t enc_dec_mode;
@@ -1024,7 +1064,7 @@ static int ft991_get_dcs_code(RIG *rig, vfo_t vfo, tone_t *code)
 
 static int ft991_set_dcs_code(RIG *rig, vfo_t vfo, tone_t code)
 {
-    struct newcat_priv_data *priv = (struct newcat_priv_data *)rig->state.priv;
+    struct newcat_priv_data *priv = (struct newcat_priv_data *)STATE(rig)->priv;
     int i;
     ncboolean code_match;
 
@@ -1061,7 +1101,7 @@ static int ft991_set_dcs_code(RIG *rig, vfo_t vfo, tone_t code)
 
 static int ft991_set_dcs_sql(RIG *rig, vfo_t vfo, tone_t code)
 {
-    struct newcat_priv_data *priv = (struct newcat_priv_data *)rig->state.priv;
+    struct newcat_priv_data *priv = (struct newcat_priv_data *)STATE(rig)->priv;
     int i;
     ncboolean code_match;
 
@@ -1098,7 +1138,7 @@ static int ft991_set_dcs_sql(RIG *rig, vfo_t vfo, tone_t code)
 
 static int ft991_get_dcs_sql(RIG *rig, vfo_t vfo, tone_t *code)
 {
-    struct newcat_priv_data *priv = (struct newcat_priv_data *)rig->state.priv;
+    struct newcat_priv_data *priv = (struct newcat_priv_data *)STATE(rig)->priv;
     int codeindex;
     int ret;
     int ret_data_len;
@@ -1152,12 +1192,12 @@ static int ft991_get_dcs_sql(RIG *rig, vfo_t vfo, tone_t *code)
 // VFO functions so rigctld can be used without --vfo argument
 static int ft991_set_vfo(RIG *rig, vfo_t vfo)
 {
-    rig->state.current_vfo = vfo;
+    STATE(rig)->current_vfo = vfo;
     RETURNFUNC2(RIG_OK);
 }
 
 static int ft991_get_vfo(RIG *rig, vfo_t *vfo)
 {
-    *vfo = rig->state.current_vfo;
+    *vfo = STATE(rig)->current_vfo;
     RETURNFUNC2(RIG_OK);
 }

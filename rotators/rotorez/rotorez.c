@@ -29,6 +29,7 @@
  *   Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  *
  */
+/* SPDX-License-Identifier: LGPL-2.1-or-later */
 
 #include <stdio.h>
 #include <stdlib.h>          /* Standard library definitions */
@@ -39,6 +40,7 @@
 #include "serial.h"
 #include "register.h"
 #include "iofunc.h"
+#include "misc.h"
 
 #include "rotorez.h"
 
@@ -67,7 +69,7 @@ static int rotorez_rot_reset(ROT *rot, rot_reset_t reset);
 static int rotorez_rot_stop(ROT *rot);
 static int dcu1_rot_stop(ROT *rot);
 
-static int rotorez_rot_set_conf(ROT *rot, token_t token, const char *val);
+static int rotorez_rot_set_conf(ROT *rot, hamlib_token_t token, const char *val);
 
 static const char *rotorez_rot_get_info(ROT *rot);
 
@@ -178,7 +180,7 @@ const struct rot_caps rotorcard_rot_caps =
     .mfg_name =         "Idiom Press",
     .version =          "20230328.0",
     .copyright =        "LGPL",
-    .status =           RIG_STATUS_BETA,
+    .status =           RIG_STATUS_STABLE,
     .rot_type =         ROT_TYPE_OTHER,
     .port_type =        RIG_PORT_SERIAL,
     .serial_rate_min =  4800,
@@ -413,17 +415,17 @@ static int rotorez_rot_init(ROT *rot)
         return -RIG_EINVAL;
     }
 
-    rot->state.priv = (struct rotorez_rot_priv_data *)
+    ROTSTATE(rot)->priv = (struct rotorez_rot_priv_data *)
                       calloc(1, sizeof(struct rotorez_rot_priv_data));
 
-    if (!rot->state.priv)
+    if (!ROTSTATE(rot)->priv)
     {
         return -RIG_ENOMEM;
     }
 
-    rot->state.rotport.type.rig = RIG_PORT_SERIAL;
+    ROTPORT(rot)->type.rig = RIG_PORT_SERIAL;
 
-    ((struct rotorez_rot_priv_data *)rot->state.priv)->az = 0;
+    ((struct rotorez_rot_priv_data *)ROTSTATE(rot)->priv)->az = 0;
 
     return RIG_OK;
 }
@@ -442,12 +444,12 @@ static int rotorez_rot_cleanup(ROT *rot)
         return -RIG_EINVAL;
     }
 
-    if (rot->state.priv)
+    if (ROTSTATE(rot)->priv)
     {
-        free(rot->state.priv);
+        free(ROTSTATE(rot)->priv);
     }
 
-    rot->state.priv = NULL;
+    ROTSTATE(rot)->priv = NULL;
 
     return RIG_OK;
 }
@@ -463,7 +465,7 @@ static int rotorez_rot_set_position(ROT *rot, azimuth_t azimuth,
                                     elevation_t elevation)
 {
     char cmdstr[8];
-    char execstr[5] = "AM1;";
+    const char execstr[5] = "AM1;";
     int err;
 
     rig_debug(RIG_DEBUG_VERBOSE, "%s called\n", __func__);
@@ -538,7 +540,7 @@ static int rt21_rot_set_position(ROT *rot, azimuth_t azimuth,
         return err;
     }
 
-    if (rot->state.rotport2.pathname[0] != 0)
+    if (ROTPORT2(rot)->pathname[0] != 0)
     {
         SNPRINTF(cmdstr, sizeof(cmdstr), "AP1%05.1f\r;",
                  elevation);    /* Total field width of 5 chars */
@@ -565,8 +567,9 @@ static int rt21_rot_set_position(ROT *rot, azimuth_t azimuth,
 static int rotorez_rot_get_position(ROT *rot, azimuth_t *azimuth,
                                     elevation_t *elevation)
 {
-    struct rot_state *rs;
-    char cmdstr[5] = "AI1;";
+    hamlib_port_t *rotp;
+    hamlib_port_t *rotp2;
+    const char cmdstr[5] = "AI1;";
     char az[5];         /* read azimuth string */
     char *p;
     azimuth_t tmp = 0;
@@ -578,6 +581,8 @@ static int rotorez_rot_get_position(ROT *rot, azimuth_t *azimuth,
     {
         return -RIG_EINVAL;
     }
+    rotp = ROTPORT(rot);
+    rotp2 = ROTPORT2(rot);
 
     do
     {
@@ -588,9 +593,7 @@ static int rotorez_rot_get_position(ROT *rot, azimuth_t *azimuth,
             return err;
         }
 
-        rs = &rot->state;
-
-        err = read_block(&rs->rotport, (unsigned char *) az, AZ_READ_LEN);
+        err = read_block(rotp, (unsigned char *) az, AZ_READ_LEN);
 
         if (err != AZ_READ_LEN)
         {
@@ -653,7 +656,7 @@ static int rotorez_rot_get_position(ROT *rot, azimuth_t *azimuth,
 
     *azimuth = tmp;
 
-    if (strlen(rot->state.rotport2.pathname) > 0)
+    if (strlen(rotp2->pathname) > 0)
     {
         do
         {
@@ -664,9 +667,9 @@ static int rotorez_rot_get_position(ROT *rot, azimuth_t *azimuth,
                 return err;
             }
 
-            rs = &rot->state;
-
-            err = read_block(&rs->rotport, (unsigned char *) az, AZ_READ_LEN);
+            //TODO: Should this be rotp or rotp2????
+            //err = read_block(&rs->rotport, (unsigned char *) az, AZ_READ_LEN);
+            err = read_block(rotp2, (unsigned char *) az, AZ_READ_LEN);
 
             if (err != AZ_READ_LEN)
             {
@@ -732,8 +735,7 @@ static int rotorez_rot_get_position(ROT *rot, azimuth_t *azimuth,
 static int erc_rot_get_position(ROT *rot, azimuth_t *azimuth,
                                 elevation_t *elevation)
 {
-    struct rot_state *rs;
-    char cmdstr[5] = "AI1;";
+    const char cmdstr[5] = "AI1;";
     char az[5];         /* read azimuth string */
     char *p;
     azimuth_t tmp = 0;
@@ -755,9 +757,7 @@ static int erc_rot_get_position(ROT *rot, azimuth_t *azimuth,
             return err;
         }
 
-        rs = &rot->state;
-
-        err = read_block(&rs->rotport, (unsigned char *) az, AZ_READ_LEN);
+        err = read_block(ROTPORT(rot), (unsigned char *) az, AZ_READ_LEN);
 
         if (err != AZ_READ_LEN)
         {
@@ -850,7 +850,8 @@ static int erc_rot_get_position(ROT *rot, azimuth_t *azimuth,
 static int rt21_rot_get_position(ROT *rot, azimuth_t *azimuth,
                                  elevation_t *elevation)
 {
-    struct rot_state *rs;
+    hamlib_port_t *rotp;
+    hamlib_port_t *rotp2;
     char az[8];     /* read azimuth string */
     int err;
 
@@ -860,6 +861,8 @@ static int rt21_rot_get_position(ROT *rot, azimuth_t *azimuth,
     {
         return -RIG_EINVAL;
     }
+    rotp = ROTPORT(rot);
+    rotp2 = ROTPORT2(rot);
 
     /* 'BI1' is an RT-21 specific command that queries for a floating
      * point position (to the tenth of a degree).
@@ -871,9 +874,7 @@ static int rt21_rot_get_position(ROT *rot, azimuth_t *azimuth,
         return err;
     }
 
-    rs = &rot->state;
-
-    err = read_string(&rs->rotport, (unsigned char *) az, RT21_AZ_LEN + 1, ";",
+    err = read_string(rotp, (unsigned char *) az, RT21_AZ_LEN + 1, ";",
                       strlen(";"), 0, 1);
 
     if (err < 0)    /* read_string returns negative on error. */
@@ -906,7 +907,7 @@ static int rt21_rot_get_position(ROT *rot, azimuth_t *azimuth,
 
         *azimuth = tmp;
 
-        if (strlen(rot->state.rotport2.pathname) > 0)
+        if (rotp2 && strlen(rotp2->pathname) > 0)
         {
             err = rotorez_send_priv_cmd2(rot, "BI1;");
 
@@ -915,9 +916,7 @@ static int rt21_rot_get_position(ROT *rot, azimuth_t *azimuth,
                 return err;
             }
 
-            rs = &rot->state;
-
-            err = read_string(&rs->rotport2, (unsigned char *) az, RT21_AZ_LEN + 1, ";",
+            err = read_string(rotp2, (unsigned char *) az, RT21_AZ_LEN + 1, ";",
                               strlen(";"), 0, 1);
 
             if (err < 0)    /* read_string returns negative on error. */
@@ -954,7 +953,7 @@ static int rt21_rot_get_position(ROT *rot, azimuth_t *azimuth,
 
 static int rotorez_rot_stop(ROT *rot)
 {
-    char cmdstr[2] = ";";
+    const char cmdstr[2] = ";";
     int err;
 
     rig_debug(RIG_DEBUG_VERBOSE, "%s called\n", __func__);
@@ -987,7 +986,7 @@ static int rotorez_rot_reset(ROT *rot, rot_reset_t reset)
 
 static int dcu1_rot_stop(ROT *rot)
 {
-    char cmdstr[5] = "AS1;";
+    const char cmdstr[5] = "AS1;";
     int err;
 
     rig_debug(RIG_DEBUG_VERBOSE, "%s called\n", __func__);
@@ -1016,7 +1015,7 @@ static int dcu1_rot_stop(ROT *rot)
  * define in rotorez.h and *val of '1' or '0' (enable/disable).
  */
 
-static int rotorez_rot_set_conf(ROT *rot, token_t token, const char *val)
+static int rotorez_rot_set_conf(ROT *rot, hamlib_token_t token, const char *val)
 {
     char cmdstr[2];
     char c;
@@ -1090,12 +1089,21 @@ static int rotorez_rot_set_conf(ROT *rot, token_t token, const char *val)
         return -RIG_EINVAL;
     }
 
-    rig_debug(RIG_DEBUG_TRACE, "%s: c = %c, *val = %c\n", __func__, c, *val);
     SNPRINTF(cmdstr, sizeof(cmdstr), "%c", c);
 
     rig_debug(RIG_DEBUG_TRACE, "%s: cmdstr = %s, *val = %c\n",
               __func__, cmdstr, *val);
 
+    /*
+     * We cannot send anything to the rotator if it isn't open yet.
+     * Queue any set_conf commands and let rot_open reprocess them
+     *  after it has done it's job.
+     */
+    if (!ROTSTATE(rot)->comm_state)
+    {
+	err = queue_deferred_config(&ROTSTATE(rot)->config_queue, token, val);
+	return err;
+    }
     err = rotorez_send_priv_cmd(rot, cmdstr);
 
     if (err != RIG_OK)
@@ -1134,7 +1142,6 @@ static const char *rotorez_rot_get_info(ROT *rot)
 
 static int rotorez_send_priv_cmd(ROT *rot, const char *cmdstr)
 {
-    struct rot_state *rs;
     int err;
 
     rig_debug(RIG_DEBUG_VERBOSE, "%s called\n", __func__);
@@ -1144,8 +1151,7 @@ static int rotorez_send_priv_cmd(ROT *rot, const char *cmdstr)
         return -RIG_EINVAL;
     }
 
-    rs = &rot->state;
-    err = write_block(&rs->rotport, (unsigned char *) cmdstr, strlen(cmdstr));
+    err = write_block(ROTPORT(rot), (unsigned char *) cmdstr, strlen(cmdstr));
 
     if (err != RIG_OK)
     {
@@ -1158,7 +1164,6 @@ static int rotorez_send_priv_cmd(ROT *rot, const char *cmdstr)
 // send command to 2nd rotator port
 static int rotorez_send_priv_cmd2(ROT *rot, const char *cmdstr)
 {
-    struct rot_state *rs;
     int err;
 
     rig_debug(RIG_DEBUG_VERBOSE, "%s called\n", __func__);
@@ -1168,8 +1173,7 @@ static int rotorez_send_priv_cmd2(ROT *rot, const char *cmdstr)
         return -RIG_EINVAL;
     }
 
-    rs = &rot->state;
-    err = write_block(&rs->rotport2, (unsigned char *) cmdstr, strlen(cmdstr));
+    err = write_block(ROTPORT2(rot), (unsigned char *) cmdstr, strlen(cmdstr));
 
     if (err != RIG_OK)
     {
@@ -1193,7 +1197,6 @@ static int rotorez_send_priv_cmd2(ROT *rot, const char *cmdstr)
 
 static int rotorez_flush_buffer(ROT *rot)
 {
-    struct rot_state *rs;
     char garbage[32];         /* read buffer */
     int err = 0;
     size_t MAX = 31;
@@ -1205,11 +1208,9 @@ static int rotorez_flush_buffer(ROT *rot)
         return -RIG_EINVAL;
     }
 
-    rs = &rot->state;
-
     do
     {
-        err = read_block(&rs->rotport, (unsigned char *) garbage, MAX);
+        err = read_block(ROTPORT(rot), (unsigned char *) garbage, MAX);
 
         /* Oops!  An IO error was encountered.  Bail out! */
         if (err == -RIG_EIO)

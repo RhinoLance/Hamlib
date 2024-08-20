@@ -24,8 +24,6 @@
  *
  */
 
-// TODO: Add "symmetric" set_conf + get_conf to rigctl+rotctl
-
 #include <hamlib/config.h>
 
 #include <stdio.h>
@@ -65,7 +63,7 @@ extern int read_history();
 #include <hamlib/rotator.h>
 #include "iofunc.h"
 #include "misc.h"
-
+#include "dumpcaps_rot.h"
 
 /* HAVE_SSLEEP is defined when Windows Sleep is found
  * HAVE_SLEEP is defined when POSIX sleep is found
@@ -189,10 +187,12 @@ declare_proto_rot(set_parm);
 declare_proto_rot(get_parm);
 declare_proto_rot(get_info);
 declare_proto_rot(get_status);
-declare_proto_rot(inter_set_conf);  /* interactive mode set_conf */
+declare_proto_rot(set_conf);
+declare_proto_rot(get_conf);
 declare_proto_rot(send_cmd);
 declare_proto_rot(dump_state);
 declare_proto_rot(dump_caps);
+declare_proto_rot(dump_conf);
 /* Follows are functions from locator.c */
 declare_proto_rot(loc2lonlat);
 declare_proto_rot(lonlat2loc);
@@ -224,11 +224,12 @@ struct test_table test_list[] =
     { 'u',  "get_func",     ACTION(get_func),           ARG_IN1 | ARG_OUT2, "Func", "Func Status" },
     { 'X',  "set_parm",     ACTION(set_parm),           ARG_IN, "Parm", "Parm Value" },
     { 'x',  "get_parm",     ACTION(get_parm),           ARG_IN1 | ARG_OUT2, "Parm", "Parm Value" },
-    { 'C', "set_conf",      ACTION(inter_set_conf),     ARG_IN, "Token", "Value" },
+    { 'C', "set_conf",      ACTION(set_conf),           ARG_IN, "Token", "Value" },
     { '_', "get_info",      ACTION(get_info),           ARG_OUT, "Info" },
     { 's', "get_status",    ACTION(get_status),         ARG_OUT, "Status flags" },
     { 'w', "send_cmd",      ACTION(send_cmd),           ARG_IN1 | ARG_IN_LINE | ARG_OUT2, "Cmd", "Reply" },
     { '1', "dump_caps",     ACTION(dump_caps), },
+    { '3', "dump_conf",     ACTION(dump_conf), },
     { 0x8f, "dump_state",   ACTION(dump_state),         ARG_OUT },
     { 'L', "lonlat2loc",    ACTION(lonlat2loc),         ARG_IN1 | ARG_IN2 | ARG_IN3 | ARG_OUT1, "Longitude", "Latitude", "Loc Len [2-12]", "Locator" },
     { 'l', "loc2lonlat",    ACTION(loc2lonlat),         ARG_IN1 | ARG_OUT1 | ARG_OUT2, "Locator", "Longitude", "Latitude" },
@@ -240,6 +241,7 @@ struct test_table test_list[] =
     { 'A', "a_sp2a_lp",     ACTION(az_sp2az_lp),        ARG_IN1 | ARG_OUT1, "Short Path Deg", "Long Path Deg" },
     { 'a', "d_sp2d_lp",     ACTION(dist_sp2dist_lp),    ARG_IN1 | ARG_OUT1, "Short Path km", "Long Path km" },
     { 0x8c, "pause",        ACTION(pause),              ARG_IN, "Seconds" },
+    { 0xad, "get_conf",     ACTION(get_conf), ARG_IN1 | ARG_OUT2, "Token", "Value"},
     { 0x00, "", NULL },
 
 };
@@ -308,7 +310,7 @@ void hash_add_model(int id,
 
 
 /* Hash sorting functions */
-int hash_model_id_sort(struct mod_lst *a, struct mod_lst *b)
+int hash_model_id_sort(const struct mod_lst *a, const struct mod_lst *b)
 {
     return (a->id > b->id);
 }
@@ -405,8 +407,19 @@ static int scanfc(FILE *fin, const char *format, void *p)
                 continue;
             }
 
-            rig_debug(RIG_DEBUG_ERR, "fscanf: %s\n", strerror(errno));
-            rig_debug(RIG_DEBUG_ERR, "fscanf: parsing '%s' with '%s'\n", (char *)p, format);
+            if (!feof(fin))
+            {
+                rig_debug(RIG_DEBUG_TRACE, "%s fscanf of:", __func__);
+                dump_hex((unsigned char *)p, strlen(p));
+                rig_debug(RIG_DEBUG_TRACE, " failed with format '%s'\n", format);
+            }
+
+        }
+
+        if (ferror(fin)) { rig_debug(RIG_DEBUG_ERR, "%s: errno=%d, %s\n", __func__, errno, strerror(errno)); clearerr(fin); }
+        if (errno == EINVAL) // invalid arg we will continue
+        {
+            continue;
         }
 
         return ret;
@@ -424,7 +437,7 @@ static int scanfc(FILE *fin, const char *format, void *p)
  * returns <0 is error number
  * returns >=0 when successful
  */
-static int next_word(char *buffer, int argc, char *argv[], int newline)
+static int next_word(char *buffer, int argc, const char **argv, int newline)
 {
     int ret;
     char c;
@@ -519,7 +532,8 @@ static int next_word(char *buffer, int argc, char *argv[], int newline)
     })
 
 
-int rotctl_parse(ROT *my_rot, FILE *fin, FILE *fout, char *argv[], int argc,
+int rotctl_parse(ROT *my_rot, FILE *fin, FILE *fout, const char *argv[],
+                 int argc,
                  int interactive, int prompt, char send_cmd_term)
 {
     int retcode;            /* generic return code from functions */
@@ -1467,6 +1481,7 @@ int rotctl_parse(ROT *my_rot, FILE *fin, FILE *fout, char *argv[], int argc,
             rot_debug(RIG_DEBUG_TRACE, "%s: NETROTCTL_RET %d\n", __func__, retcode);
             fprintf(fout, NETROTCTL_RET "%d\n", retcode);
             // ext_resp = 0; // not used ?
+            // cppcheck-suppress unreadVariable
             resp_sep = '\n';
         }
         else
@@ -1494,6 +1509,7 @@ int rotctl_parse(ROT *my_rot, FILE *fin, FILE *fout, char *argv[], int argc,
             {
                 rot_debug(RIG_DEBUG_TRACE, "%s: NETROTCTL_RET 0\n", __func__);
                 fprintf(fout, NETROTCTL_RET "0\n");
+                // cppcheck-suppress unreadVariable
                 resp_sep = '\n';
             }
         }
@@ -1521,32 +1537,29 @@ void usage_rot(FILE *fout)
 
     for (i = 0; test_list[i].cmd != 0; i++)
     {
-        int nbspaces;
         fprintf(fout,
                 "%c: %-12s(",
                 isprint(test_list[i].cmd) ? test_list[i].cmd : '?',
                 test_list[i].name);
 
-        nbspaces = 16;
-
         if (test_list[i].arg1 && (test_list[i].flags & ARG_IN1))
         {
-            nbspaces -= fprintf(fout, "%s", test_list[i].arg1);
+            fprintf(fout, "%s", test_list[i].arg1);
         }
 
         if (test_list[i].arg2 && (test_list[i].flags & ARG_IN2))
         {
-            nbspaces -= fprintf(fout, ", %s", test_list[i].arg2);
+            fprintf(fout, ", %s", test_list[i].arg2);
         }
 
         if (test_list[i].arg3 && (test_list[i].flags & ARG_IN3))
         {
-            nbspaces -= fprintf(fout, ", %s", test_list[i].arg3);
+            fprintf(fout, ", %s", test_list[i].arg3);
         }
 
         if (test_list[i].arg4 && (test_list[i].flags & ARG_IN4))
         {
-            nbspaces -= fprintf(fout, ", %s", test_list[i].arg4);
+            fprintf(fout, ", %s", test_list[i].arg4);
         }
 
         fprintf(fout, ")\n");
@@ -1568,23 +1581,23 @@ int print_conf_list(const struct confparams *cfp, rig_ptr_t data)
     char buf[128] = "";
 
     rot_get_conf2(rot, cfp->token, buf, sizeof(buf));
-    printf("%s: \"%s\"\n" "\tDefault: %s, Value: %s\n",
-           cfp->name,
-           cfp->tooltip,
-           cfp->dflt,
-           buf);
+    fprintf(stdout, "%s: \"%s\"\n" "\tDefault: %s, Value: %s\n",
+            cfp->name,
+            cfp->tooltip,
+            cfp->dflt,
+            buf);
 
     switch (cfp->type)
     {
     case RIG_CONF_NUMERIC:
-        printf("\tRange: %.1f..%.1f, step %.1f\n",
-               cfp->u.n.min,
-               cfp->u.n.max,
-               cfp->u.n.step);
+        fprintf(stdout, "\tRange: %.1f..%.1f, step %.1f\n",
+                cfp->u.n.min,
+                cfp->u.n.max,
+                cfp->u.n.step);
         break;
 
     case RIG_CONF_CHECKBUTTON:
-        printf("\tCheckbox: 0,1\n");
+        fprintf(stdout, "\tCheckbox: 0,1\n");
         break;
 
     case RIG_CONF_COMBO:
@@ -1593,14 +1606,14 @@ int print_conf_list(const struct confparams *cfp, rig_ptr_t data)
             break;
         }
 
-        printf("\tCombo: %s", cfp->u.c.combostr[0]);
+        fprintf(stdout, "\tCombo: %s", cfp->u.c.combostr[0]);
 
         for (i = 1 ; i < RIG_COMBO_MAX && cfp->u.c.combostr[i]; i++)
         {
-            printf(", %s", cfp->u.c.combostr[i]);
+            fprintf(stdout, ", %s", cfp->u.c.combostr[i]);
         }
 
-        printf("\n");
+        fprintf(stdout, "\n");
         break;
 
     default:
@@ -1660,55 +1673,72 @@ void list_models()
     hash_delete_all();
 }
 
-
-int set_conf(ROT *my_rot, char *conf_parms)
+declare_proto_rot(get_conf)
 {
-    char *p;
-    int token;
+    int ret;
+    rig_debug(RIG_DEBUG_ERR, "%s: \n", __func__);
 
-    rot_debug(RIG_DEBUG_TRACE, "%s: called\n", __func__);
-    p = conf_parms;
-
-    while (p && *p != '\0')
+    if (arg1 == NULL || arg1[0] == '?')
     {
-        int ret;
-        char *q, *n = NULL;
-        /* FIXME: left hand value of = cannot be null */
-        q = strchr(p, '=');
-
-        if (!q)
-        {
-            return RIG_EINVAL;
-        }
-
-        *q++ = '\0';
-        n = strchr(q, ',');
-
-        if (n)
-        {
-            *n++ = '\0';
-        }
-
-        token = rot_token_lookup(my_rot, p);
-
-        if (token != 0)
-        {
-            ret = rot_set_conf(my_rot, token, q);
-
-            if (ret != RIG_OK)
-            {
-                return ret;
-            }
-        }
-        else
-        {
-            rig_debug(RIG_DEBUG_WARN, "%s: invalid token %s for this rig\n", __func__, p);
-        }
-
-        p = n;
+        dumpconf_list(rot, fout);
+        debugmsgsave[0] = 0;
+        debugmsgsave2[0] = 0;
+        return RIG_OK;
     }
 
-    return RIG_OK;
+    hamlib_token_t mytoken = rot_token_lookup(rot, arg1);
+
+    if (mytoken == 0)
+    {
+        rig_debug(RIG_DEBUG_ERR, "%s: unknown token '%s' for this rot\n", __func__,
+                  arg1);
+        ret = -RIG_EINVAL;
+    }
+    else
+    {
+        char value[4096];
+        ret = rot_get_conf(rot, rot_token_lookup(rot, arg1), value);
+
+        if (ret != RIG_OK)
+        {
+            return ret;
+        }
+
+        fprintf(fout, "%s=%s\n", arg1, value);
+    }
+
+    return (ret);
+}
+
+
+/* 'C' */
+declare_proto_rot(set_conf)
+{
+    int ret;
+    rig_debug(RIG_DEBUG_TRACE, "%s: called\n", __func__);
+
+    if (arg1[0] == '?')
+    {
+        dumpconf_list(rot, fout);
+        debugmsgsave[0] = 0;
+        debugmsgsave2[0] = 0;
+        return RIG_OK;
+    }
+
+    hamlib_token_t mytoken = rot_token_lookup(rot, arg1);
+
+    if (mytoken == 0)
+    {
+        rig_debug(RIG_DEBUG_ERR, "%s: unknown token '%s' for this rot\n", __func__,
+                  arg1);
+        ret = -RIG_EINVAL;
+    }
+    else
+    {
+        ret = rot_set_conf(rot, rot_token_lookup(rot, arg1), arg2);
+    }
+
+    return (ret);
 }
 
 
@@ -1867,6 +1897,22 @@ declare_proto_rot(move)
     {
         direction = ROT_MOVE_DOWN;
     }
+    else if (!strcmp(arg1, "DOWN_RIGHT") || !strcmp(arg1, "DOWN_CW"))
+    {
+        direction = ROT_MOVE_DOWN_CW;
+    }
+    else if (!strcmp(arg1, "DOWN_LEFT") || !strcmp(arg1, "DOWN_CCW"))
+    {
+        direction = ROT_MOVE_DOWN_CCW;
+    }
+    else if (!strcmp(arg1, "UP_RIGHT") || !strcmp(arg1, "UP_CW"))
+    {
+        direction = ROT_MOVE_UP_CW;
+    }
+    else if (!strcmp(arg1, "UP_LEFT") || !strcmp(arg1, "UP_CCW"))
+    {
+        direction = ROT_MOVE_UP_CCW;
+    }
     else
     {
         CHKSCN1ARG(sscanf(arg1, "%d", &direction));
@@ -1888,7 +1934,7 @@ declare_proto_rot(set_level)
     if (!strcmp(arg1, "?"))
     {
         char s[SPRINTF_MAX_SIZE];
-        rot_sprintf_level(s, sizeof(s), rot->state.has_set_level);
+        rot_sprintf_level(s, sizeof(s), ROTSTATE(rot)->has_set_level);
         fputs(s, fout);
 
         if (rot->caps->set_ext_level)
@@ -1964,7 +2010,7 @@ declare_proto_rot(get_level)
     if (!strcmp(arg1, "?"))
     {
         char s[SPRINTF_MAX_SIZE];
-        rot_sprintf_level(s, sizeof(s), rot->state.has_get_level);
+        rot_sprintf_level(s, sizeof(s), ROTSTATE(rot)->has_get_level);
         fputs(s, fout);
 
         if (rot->caps->get_ext_level)
@@ -2062,7 +2108,7 @@ declare_proto_rot(set_func)
     if (!strcmp(arg1, "?"))
     {
         char s[SPRINTF_MAX_SIZE];
-        rot_sprintf_func(s, sizeof(s), rot->state.has_set_func);
+        rot_sprintf_func(s, sizeof(s), ROTSTATE(rot)->has_set_func);
         fprintf(fout, "%s\n", s);
         return RIG_OK;
     }
@@ -2100,7 +2146,7 @@ declare_proto_rot(get_func)
     if (!strcmp(arg1, "?"))
     {
         char s[SPRINTF_MAX_SIZE];
-        rot_sprintf_func(s, sizeof(s), rot->state.has_get_func);
+        rot_sprintf_func(s, sizeof(s), ROTSTATE(rot)->has_get_func);
         fprintf(fout, "%s\n", s);
         return RIG_OK;
     }
@@ -2162,7 +2208,7 @@ declare_proto_rot(set_parm)
     if (!strcmp(arg1, "?"))
     {
         char s[SPRINTF_MAX_SIZE];
-        rot_sprintf_parm(s, sizeof(s), rot->state.has_set_parm);
+        rot_sprintf_parm(s, sizeof(s), ROTSTATE(rot)->has_set_parm);
         fprintf(fout, "%s\n", s);
         return RIG_OK;
     }
@@ -2235,7 +2281,7 @@ declare_proto_rot(get_parm)
     if (!strcmp(arg1, "?"))
     {
         char s[SPRINTF_MAX_SIZE];
-        rot_sprintf_parm(s, sizeof(s), rot->state.has_get_parm);
+        rot_sprintf_parm(s, sizeof(s), ROTSTATE(rot)->has_get_parm);
         fprintf(fout, "%s\n", s);
         return RIG_OK;
     }
@@ -2338,6 +2384,7 @@ declare_proto_rot(get_parm)
 }
 
 
+#if 0 // replace by set_conf
 /* 'C' */
 declare_proto_rot(inter_set_conf)
 {
@@ -2355,6 +2402,7 @@ declare_proto_rot(inter_set_conf)
     SNPRINTF(buf, sizeof(buf), "%s=%s", arg1, arg2);
     return set_conf(rot, buf);
 }
+#endif
 
 /* '1' */
 declare_proto_rot(dump_caps)
@@ -2364,13 +2412,21 @@ declare_proto_rot(dump_caps)
     return RIG_OK;
 }
 
+declare_proto_rot(dump_conf)
+{
+    ENTERFUNC2;
+
+    dumpconf_list(rot, fout);
+
+    RETURNFUNC2(RIG_OK);
+}
 
 /* For rotctld internal use
  * '0x8f'
  */
 declare_proto_rot(dump_state)
 {
-    struct rot_state *rs = &rot->state;
+    struct rot_state *rs = ROTSTATE(rot);
     char *tag;
 
     /*
@@ -2399,7 +2455,7 @@ declare_proto_rot(dump_state)
         tag = "Minimum Azimuth: ";
     }
 
-    fprintf(fout, "%s%lf%c", tag, rs->min_az + rot->state.az_offset, resp_sep);
+    fprintf(fout, "%s%lf%c", tag, rs->min_az + rs->az_offset, resp_sep);
 
     tag = "max_az=";
 
@@ -2408,7 +2464,7 @@ declare_proto_rot(dump_state)
         tag = "Maximum Azimuth: ";
     }
 
-    fprintf(fout, "%s%lf%c", tag, rs->max_az + rot->state.az_offset, resp_sep);
+    fprintf(fout, "%s%lf%c", tag, rs->max_az + rs->az_offset, resp_sep);
 
     tag = "min_el=";
 
@@ -2417,7 +2473,7 @@ declare_proto_rot(dump_state)
         tag = "Minimum Elevation: ";
     }
 
-    fprintf(fout, "%s%lf%c", tag, rs->min_el + rot->state.el_offset, resp_sep);
+    fprintf(fout, "%s%lf%c", tag, rs->min_el + rs->el_offset, resp_sep);
 
     tag = "max_el=";
 
@@ -2426,7 +2482,7 @@ declare_proto_rot(dump_state)
         tag = "Maximum Elevation: ";
     }
 
-    fprintf(fout, "%s%lf%c", tag, rs->max_el + rot->state.el_offset, resp_sep);
+    fprintf(fout, "%s%lf%c", tag, rs->max_el + rs->el_offset, resp_sep);
 
     tag = "south_zero=";
 
@@ -2467,7 +2523,7 @@ declare_proto_rot(dump_state)
 declare_proto_rot(send_cmd)
 {
     int retval;
-    struct rot_state *rs;
+    hamlib_port_t *rotp = ROTPORT(rot);
     int backend_num, cmd_len;
 #define BUFSZ 128
     unsigned char bufcmd[BUFSZ];
@@ -2515,11 +2571,9 @@ declare_proto_rot(send_cmd)
         eom_buf[2] = send_cmd_term;
     }
 
-    rs = &rot->state;
+    rig_flush(rotp);
 
-    rig_flush(&rs->rotport);
-
-    retval = write_block(&rs->rotport, bufcmd, cmd_len);
+    retval = write_block(rotp, bufcmd, cmd_len);
 
     if (retval != RIG_OK)
     {
@@ -2537,7 +2591,7 @@ declare_proto_rot(send_cmd)
          * assumes CR or LF is end of line char
          * for all ascii protocols
          */
-        retval = read_string(&rs->rotport, buf, BUFSZ, eom_buf, strlen(eom_buf), 0, 1);
+        retval = read_string(rotp, buf, BUFSZ, eom_buf, strlen(eom_buf), 0, 1);
 
         if (retval < 0)
         {
@@ -2856,3 +2910,20 @@ declare_proto_rot(pause)
     sleep(seconds);
     return RIG_OK;
 }
+
+// short list for rigctl/rigctld display
+int print_conf_list2(const struct confparams *cfp, rig_ptr_t data, FILE *fout)
+{
+    ROT *rot = (ROT *) data;
+    char buf[128] = "";
+
+    rot_get_conf(rot, cfp->token, buf);
+    fprintf(fout, "%s: \"%s\"\n" "\t" "Default: %s, Value: %s\n",
+            cfp->name,
+            cfp->tooltip,
+            cfp->dflt,
+            buf);
+
+    return 1;  /* !=0, we want them all ! */
+}
+

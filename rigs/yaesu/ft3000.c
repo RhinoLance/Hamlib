@@ -148,7 +148,7 @@ int ft3000_set_ant(RIG *rig, vfo_t vfo, ant_t ant, value_t option)
 {
     char *cmd;
     int err;
-    struct newcat_priv_data *priv = (struct newcat_priv_data *)rig->state.priv;
+    struct newcat_priv_data *priv = (struct newcat_priv_data *)STATE(rig)->priv;
 
     ENTERFUNC;
 
@@ -167,7 +167,7 @@ int ft3000_set_ant(RIG *rig, vfo_t vfo, ant_t ant, value_t option)
         break;
 
     default:
-        rig_debug(RIG_DEBUG_ERR, "%s: expected 1,2,3 got %d\n", __func__, ant);
+        rig_debug(RIG_DEBUG_ERR, "%s: expected 1,2,3 got %u\n", __func__, ant);
         RETURNFUNC(-RIG_EINVAL);
     }
 
@@ -184,7 +184,7 @@ int ft3000_set_ant(RIG *rig, vfo_t vfo, ant_t ant, value_t option)
 int ft3000_get_ant(RIG *rig, vfo_t vfo, ant_t dummy, value_t *option,
                    ant_t *ant_curr, ant_t *ant_tx, ant_t *ant_rx)
 {
-    struct newcat_priv_data *priv = (struct newcat_priv_data *)rig->state.priv;
+    struct newcat_priv_data *priv = (struct newcat_priv_data *)STATE(rig)->priv;
     int err;
 
     ENTERFUNC;
@@ -237,7 +237,7 @@ int ft3000_get_ant(RIG *rig, vfo_t vfo, ant_t dummy, value_t *option,
  * so this is just a copy of the FTDX 5000 caps.
  * It really needs to be reviewed for accuracy, but it works for WSJT-X.
  */
-const struct rig_caps ftdx3000_caps =
+struct rig_caps ftdx3000_caps =
 {
     RIG_MODEL(RIG_MODEL_FTDX3000),
     .model_name =         "FTDX-3000",
@@ -270,13 +270,13 @@ const struct rig_caps ftdx3000_caps =
     .level_gran = {
 #include "level_gran_yaesu.h"
         [LVL_NOTCHF] = { .min = { .i = 1 }, .max = { .i = 4000 }, .step = { .i = 10 } },
-        [LVL_MICGAIN] = { .min = { .f = 0 }, .max = { .f = 1.0 }, .step = { .f = 1.0f/100.0f } },
-        [LVL_MONITOR_GAIN] = { .min = { .f = 0 }, .max = { .f = 1.0 }, .step = { .f = 1.0f/100.0f } },
-        [LVL_RFPOWER] = { .min = { .f = .05 }, .max = { .f = 1.0 }, .step = { .f = 1.0f/100.0f } },
+        [LVL_MICGAIN] = { .min = { .f = 0 }, .max = { .f = 1.0 }, .step = { .f = 1.0f / 100.0f } },
+        [LVL_MONITOR_GAIN] = { .min = { .f = 0 }, .max = { .f = 1.0 }, .step = { .f = 1.0f / 100.0f } },
+        [LVL_RFPOWER] = { .min = { .f = .05 }, .max = { .f = 1.0 }, .step = { .f = 1.0f / 100.0f } },
     },
     .parm_gran =  {
         [PARM_BANDSELECT] = {.min = {.f = 0.0f}, .max = {.f = 1.0f}, .step = {.s = "BAND160M,BAND80M,BANDUNUSED,BAND40M,BAND30M,BAND20M,BAND17M,BAND15M,BAND12M,BAND10M,BAND6M,BANDGEN"}}
-        },
+    },
 
     .ctcss_list =         common_ctcss_list,
     .dcs_list =           NULL,
@@ -297,6 +297,7 @@ const struct rig_caps ftdx3000_caps =
     .chan_list =          {
         {   1,  99, RIG_MTYPE_MEM,  NEWCAT_MEM_CAP },
         { 100, 117, RIG_MTYPE_EDGE, NEWCAT_MEM_CAP },    /* two by two */
+        {   1,	 5, RIG_MTYPE_MORSE },
         RIG_CHAN_END,
     },
 

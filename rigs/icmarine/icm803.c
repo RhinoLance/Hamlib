@@ -50,7 +50,7 @@ static const struct icmarine_priv_caps icm803_priv_caps =
 };
 
 
-const struct rig_caps icm803_caps =
+struct rig_caps icm803_caps =
 {
     RIG_MODEL(RIG_MODEL_IC_M803),
     .model_name = "IC-M803",
@@ -79,7 +79,6 @@ const struct rig_caps icm803_caps =
     .has_get_parm =  RIG_PARM_NONE,
     .has_set_parm =  RIG_PARM_NONE,
     .level_gran = {
-        // cppcheck-suppress *
         [LVL_RAWSTR] = { .min = { .i = 0 }, .max = { .i = 8 } },
     },
     .parm_gran =  {},

@@ -62,7 +62,7 @@ int hl_usleep(rig_useconds_t usec)
     tv1.tv_sec = (time_t) delay;
     tv1.tv_nsec = (long)((delay - tv1.tv_sec) * 1e+9);
     tv2.tv_sec = 0;
-    tv2.tv_nsec = 10;
+    tv2.tv_nsec = 1000000;
 //    rig_debug(RIG_DEBUG_CACHE,"usec=%ld, sleep_time=%f, tv1=%ld,%ld\n", usec, sleep_time, (long)tv1.tv_sec,
 //           (long)tv1.tv_nsec);
 
@@ -173,7 +173,9 @@ int usleep(rig_useconds_t usec)
 
 #ifdef TEST
 #include "misc.h"
-double get_elapsed_time(struct tm start, struct tm end) {
+// cppcheck-suppress unusedFunction
+double get_elapsed_time(struct tm start, struct tm end)
+{
     // Convert struct tm to time_t
     time_t start_seconds = mktime(&start);
     time_t end_seconds = mktime(&end);
@@ -185,14 +187,14 @@ double get_elapsed_time(struct tm start, struct tm end) {
 
 int main()
 {
-    struct tm start_time, end_time;
+    //struct tm start_time, end_time;
     time_t rawtime;
 
     for (int i = 0; i < 11; ++i)
     {
         char buf[256];
         time(&rawtime);
-        hl_usleep(1000000 * 1000); // test 1s sleep
+        hl_usleep(1000000); // test 1s sleep
         date_strget(buf, sizeof(buf), 0);
         printf("%s\n", buf);
         time(&rawtime);

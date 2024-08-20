@@ -1,32 +1,36 @@
+#include <sys/types.h>
+#define _XOPEN_SOURCE 700
+#include <unistd.h>
 #include <hamlib/config.h>
-
 #include <hamlib/rig.h>
 #include "misc.h"
 #include "snapshot_data.h"
 #include "hamlibdatetime.h"
+#include "sprintflst.h"
 
 #include "cJSON.h"
-
-#define MAX_VFO_COUNT 4
 
 #define SPECTRUM_MODE_FIXED "FIXED"
 #define SPECTRUM_MODE_CENTER "CENTER"
 
+char snapshot_data_pid[20];
+
 static int snapshot_serialize_rig(cJSON *rig_node, RIG *rig)
 {
     cJSON *node;
+    char buf[1024];
+    struct rig_cache *cachep = CACHE(rig);
+    struct rig_state *rs = STATE(rig);
 
-    // TODO: need to assign rig an ID, e.g. from command line
-    node = cJSON_AddStringToObject(rig_node, "id", "rig_id");
+    cJSON *id_node = cJSON_CreateObject();
+    cJSON_AddStringToObject(id_node, "model", rig->caps->model_name);
+    cJSON_AddStringToObject(id_node, "endpoint", RIGPORT(rig)->pathname);
+    cJSON_AddStringToObject(id_node, "process", snapshot_data_pid);
+    cJSON_AddStringToObject(id_node, "deviceId", rs->device_id);
+    cJSON_AddItemToObject(rig_node, "id", id_node);
 
-    if (node == NULL)
-    {
-        goto error;
-    }
-
-    // TODO: what kind of status should this reflect?
     node = cJSON_AddStringToObject(rig_node, "status",
-                                   rig->state.comm_state ? "OK" : "CLOSED");
+                                   rig_strcommstatus(rs->comm_status));
 
     if (node == NULL)
     {
@@ -49,7 +53,7 @@ static int snapshot_serialize_rig(cJSON *rig_node, RIG *rig)
     }
 
     node = cJSON_AddBoolToObject(rig_node, "split",
-                                 rig->state.cache.split == RIG_SPLIT_ON ? 1 : 0);
+                                 cachep->split == RIG_SPLIT_ON ? 1 : 0);
 
     if (node == NULL)
     {
@@ -57,7 +61,7 @@ static int snapshot_serialize_rig(cJSON *rig_node, RIG *rig)
     }
 
     node = cJSON_AddStringToObject(rig_node, "splitVfo",
-                                   rig_strvfo(rig->state.cache.split_vfo));
+                                   rig_strvfo(cachep->split_vfo));
 
     if (node == NULL)
     {
@@ -65,24 +69,43 @@ static int snapshot_serialize_rig(cJSON *rig_node, RIG *rig)
     }
 
     node = cJSON_AddBoolToObject(rig_node, "satMode",
-                                 rig->state.cache.satmode ? 1 : 0);
+                                 cachep->satmode ? 1 : 0);
 
     if (node == NULL)
     {
         goto error;
     }
 
-    RETURNFUNC2(RIG_OK);
+    rig_sprintf_mode(buf, sizeof(buf), rs->mode_list);
+    char *p;
+    cJSON *modes_array = cJSON_CreateArray();
+
+    for (p = strtok(buf, " "); p; p = strtok(NULL, " "))
+    {
+        if (strlen(buf) > 0)
+        {
+            cJSON *tmp = cJSON_CreateString(p);
+            cJSON_AddItemToArray(modes_array, tmp);
+        }
+    }
+
+    cJSON_AddItemToObject(rig_node, "modes", modes_array);
+
+    return RIG_OK;
 
 error:
     RETURNFUNC2(-RIG_EINTERNAL);
 }
+
+// 128 max modes should last a while
+#define MAX_MODES 128
 
 static int snapshot_serialize_vfo(cJSON *vfo_node, RIG *rig, vfo_t vfo)
 {
     freq_t freq;
     int freq_ms, mode_ms, width_ms;
     rmode_t mode;
+    //rmode_t modes[MAX_MODES];
     pbwidth_t width;
     ptt_t ptt;
     split_t split;
@@ -90,6 +113,8 @@ static int snapshot_serialize_vfo(cJSON *vfo_node, RIG *rig, vfo_t vfo)
     int result;
     int is_rx, is_tx;
     cJSON *node;
+    struct rig_cache *cachep = CACHE(rig);
+    struct rig_state *rs = STATE(rig);
 
     // TODO: This data should match rig_get_info command response
 
@@ -127,19 +152,30 @@ static int snapshot_serialize_vfo(cJSON *vfo_node, RIG *rig, vfo_t vfo)
         }
     }
 
-    ptt = rig->state.cache.ptt;
-    node = cJSON_AddBoolToObject(vfo_node, "ptt", ptt == RIG_PTT_OFF ? 0 : 1);
+    split = cachep->split;
+    split_vfo = cachep->split_vfo;
+
+    is_rx = (split == RIG_SPLIT_OFF && vfo == rs->current_vfo)
+            || (split == RIG_SPLIT_ON && vfo != split_vfo);
+    is_tx = (split == RIG_SPLIT_OFF && vfo == rs->current_vfo)
+            || (split == RIG_SPLIT_ON && vfo == split_vfo);
+    ptt = cachep->ptt && is_tx;
+
+    if (is_tx)
+    {
+        node = cJSON_AddBoolToObject(vfo_node, "ptt", ptt == RIG_PTT_OFF ? 0 : 1);
+    }
+    else
+    {
+        node = cJSON_AddBoolToObject(vfo_node, "ptt", 0);
+    }
 
     if (node == NULL)
     {
         goto error;
     }
 
-    split = rig->state.cache.split;
-    split_vfo = rig->state.cache.split_vfo;
 
-    is_rx = (split == RIG_SPLIT_OFF && vfo == rig->state.current_vfo)
-            || (split == RIG_SPLIT_ON && vfo != split_vfo);
     node = cJSON_AddBoolToObject(vfo_node, "rx", is_rx);
 
     if (node == NULL)
@@ -147,8 +183,6 @@ static int snapshot_serialize_vfo(cJSON *vfo_node, RIG *rig, vfo_t vfo)
         goto error;
     }
 
-    is_tx = (split == RIG_SPLIT_OFF && vfo == rig->state.current_vfo)
-            || (split == RIG_SPLIT_ON && vfo == split_vfo);
     node = cJSON_AddBoolToObject(vfo_node, "tx", is_tx);
 
     if (node == NULL)
@@ -156,7 +190,7 @@ static int snapshot_serialize_vfo(cJSON *vfo_node, RIG *rig, vfo_t vfo)
         goto error;
     }
 
-    RETURNFUNC2(RIG_OK);
+    return RIG_OK;
 
 error:
     RETURNFUNC2(-RIG_EINTERNAL);
@@ -283,10 +317,15 @@ static int snapshot_serialize_spectrum(cJSON *spectrum_node, RIG *rig,
         goto error;
     }
 
-    RETURNFUNC2(RIG_OK);
+    return RIG_OK;
 
 error:
     RETURNFUNC2(-RIG_EINTERNAL);
+}
+
+void snapshot_init()
+{
+    snprintf(snapshot_data_pid, sizeof(snapshot_data_pid), "%d", getpid());
 }
 
 int snapshot_serialize(size_t buffer_length, char *buffer, RIG *rig,
@@ -296,14 +335,10 @@ int snapshot_serialize(size_t buffer_length, char *buffer, RIG *rig,
     cJSON *rig_node, *vfos_array, *vfo_node, *spectra_array, *spectrum_node;
     cJSON *node;
     cJSON_bool bool_result;
-
-    int vfo_count = 2;
-    vfo_t vfos[MAX_VFO_COUNT];
+    char buf[256];
     int result;
     int i;
-
-    vfos[0] = RIG_VFO_A;
-    vfos[1] = RIG_VFO_B;
+    struct rig_state *rs = STATE(rig);
 
     root_node = cJSON_CreateObject();
 
@@ -328,12 +363,21 @@ int snapshot_serialize(size_t buffer_length, char *buffer, RIG *rig,
     }
 
     node = cJSON_AddNumberToObject(root_node, "seq",
-                                   rig->state.snapshot_packet_sequence_number);
+                                   rs->snapshot_packet_sequence_number);
 
     if (node == NULL)
     {
         goto error;
     }
+
+    date_strget(buf, sizeof(buf), 0);
+    node = cJSON_AddStringToObject(root_node, "time", buf);
+
+    if (node == NULL)
+    {
+        goto error;
+    }
+
 
     // TODO: Calculate 32-bit CRC of the entire JSON record replacing the CRC value with 0
     node = cJSON_AddNumberToObject(root_node, "crc", 0);
@@ -367,10 +411,17 @@ int snapshot_serialize(size_t buffer_length, char *buffer, RIG *rig,
         goto error;
     }
 
-    for (i = 0; i < vfo_count; i++)
+    for (i = 0; i < HAMLIB_MAX_VFOS; i++)
     {
+        vfo_t vfo = rs->vfo_list & RIG_VFO_N(i);
+
+        if (!vfo)
+        {
+            continue;
+        }
+
         vfo_node = cJSON_CreateObject();
-        result = snapshot_serialize_vfo(vfo_node, rig, vfos[i]);
+        result = snapshot_serialize_vfo(vfo_node, rig, vfo);
 
         if (result != RIG_OK)
         {
@@ -416,9 +467,9 @@ int snapshot_serialize(size_t buffer_length, char *buffer, RIG *rig,
         RETURNFUNC2(-RIG_EINVAL);
     }
 
-    rig->state.snapshot_packet_sequence_number++;
+    rs->snapshot_packet_sequence_number++;
 
-    RETURNFUNC2(RIG_OK);
+    return RIG_OK;
 
 error:
     cJSON_Delete(root_node);

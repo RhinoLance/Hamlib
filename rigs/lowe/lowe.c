@@ -46,19 +46,17 @@
 
 /*
  * lowe_transaction
- * We assume that rig!=NULL, rig->state!= NULL, data!=NULL, data_len!=NULL
+ * We assume that rig!=NULL, STATE(rig)!= NULL, data!=NULL, data_len!=NULL
  */
 int lowe_transaction(RIG *rig, const char *cmd, int cmd_len, char *data,
                      int *data_len)
 {
     int retval;
-    struct rig_state *rs;
+    hamlib_port_t *rp = RIGPORT(rig);
 
-    rs = &rig->state;
+    rig_flush(rp);
 
-    rig_flush(&rs->rigport);
-
-    retval = write_block(&rs->rigport, (unsigned char *) cmd, cmd_len);
+    retval = write_block(rp, (unsigned char *) cmd, cmd_len);
 
     if (retval != RIG_OK)
     {
@@ -72,7 +70,7 @@ int lowe_transaction(RIG *rig, const char *cmd, int cmd_len, char *data,
         return 0;
     }
 
-    retval = read_string(&rs->rigport, (unsigned char *) data, BUFSZ, CR, 1, 0, 1);
+    retval = read_string(rp, (unsigned char *) data, BUFSZ, CR, 1, 0, 1);
 
     if (retval == -RIG_ETIMEOUT)
     {
@@ -114,7 +112,7 @@ int lowe_get_freq(RIG *rig, vfo_t vfo, freq_t *freq)
 {
     char freqbuf[16];
     int freq_len, retval;
-    float f_freq;
+    double f_freq;
 
     retval = lowe_transaction(rig, "FRQ?" EOM, 5, freqbuf, &freq_len);
 
@@ -125,7 +123,7 @@ int lowe_get_freq(RIG *rig, vfo_t vfo, freq_t *freq)
 
     freqbuf[freq_len < 16 ? freq_len : 15] = '\0';
 
-    sscanf(freqbuf + 1, "%f", &f_freq);
+    sscanf(freqbuf + 1, "%lf", &f_freq);
     *freq = f_freq * 1000;
 
     return retval;

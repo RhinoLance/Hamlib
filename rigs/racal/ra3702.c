@@ -44,14 +44,14 @@
  * Required A6A1 serial asynchronous interface
  *
  */
-const struct rig_caps ra3702_caps =
+struct rig_caps ra3702_caps =
 {
     RIG_MODEL(RIG_MODEL_RA3702),
     .model_name = "RA3702",
     .mfg_name =  "Racal",
     .version =  BACKEND_VER ".0",
     .copyright =  "LGPL",
-    .status =  RIG_STATUS_BETA,
+    .status =  RIG_STATUS_STABLE,
     .rig_type =  RIG_TYPE_RECEIVER,
     .ptt_type =  RIG_PTT_NONE,
     .dcd_type =  RIG_DCD_NONE,
@@ -74,7 +74,6 @@ const struct rig_caps ra3702_caps =
     .has_get_parm =  RA3702_PARM_ALL,
     .has_set_parm =  RIG_PARM_SET(RA3702_PARM_ALL),
     .level_gran = {
-        // cppcheck-suppress *
         [LVL_RAWSTR] = { .min = { .i = 0 }, .max = { .i = 255 } },
     },
     .vfo_ops =  RA3702_VFO_OPS,

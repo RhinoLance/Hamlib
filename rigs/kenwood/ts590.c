@@ -22,6 +22,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <math.h>
 
 #include "hamlib/rig.h"
 #include "kenwood.h"
@@ -40,11 +41,11 @@
 
 #define TS590_LEVEL_GET (RIG_LEVEL_RFPOWER|RIG_LEVEL_AF|RIG_LEVEL_RF|RIG_LEVEL_SQL|RIG_LEVEL_AGC|RIG_LEVEL_MICGAIN|RIG_LEVEL_STRENGTH|RIG_LEVEL_KEYSPD|RIG_LEVEL_CWPITCH| \
     RIG_LEVEL_MONITOR_GAIN|RIG_LEVEL_NB|RIG_LEVEL_NR|RIG_LEVEL_PREAMP|RIG_LEVEL_COMP|RIG_LEVEL_ATT|RIG_LEVEL_VOXDELAY|RIG_LEVEL_VOXGAIN|RIG_LEVEL_BKIN_DLYMS| \
-    RIG_LEVEL_SWR|RIG_LEVEL_COMP_METER|RIG_LEVEL_ALC|RIG_LEVEL_RFPOWER_METER|RIG_LEVEL_SLOPE_HIGH|RIG_LEVEL_SLOPE_LOW)
+    RIG_LEVEL_SWR|RIG_LEVEL_COMP_METER|RIG_LEVEL_ALC|RIG_LEVEL_RFPOWER_METER|RIG_LEVEL_RFPOWER_METER_WATTS|RIG_LEVEL_SLOPE_HIGH|RIG_LEVEL_SLOPE_LOW|RIG_LEVEL_USB_AF|RIG_LEVEL_USB_AF_INPUT)
 
 #define TS590_LEVEL_SET (RIG_LEVEL_RFPOWER|RIG_LEVEL_AF|RIG_LEVEL_RF|RIG_LEVEL_SQL|RIG_LEVEL_AGC|RIG_LEVEL_MICGAIN|RIG_LEVEL_KEYSPD|RIG_LEVEL_CWPITCH| \
     RIG_LEVEL_MONITOR_GAIN|RIG_LEVEL_NB|RIG_LEVEL_NR|RIG_LEVEL_PREAMP|RIG_LEVEL_COMP|RIG_LEVEL_ATT|RIG_LEVEL_VOXDELAY|RIG_LEVEL_VOXGAIN|RIG_LEVEL_BKIN_DLYMS| \
-    RIG_LEVEL_METER|RIG_LEVEL_SLOPE_HIGH|RIG_LEVEL_SLOPE_LOW)
+    RIG_LEVEL_METER|RIG_LEVEL_SLOPE_HIGH|RIG_LEVEL_SLOPE_LOW|RIG_LEVEL_USB_AF|RIG_LEVEL_USB_AF_INPUT)
 
 #define TS590_FUNC_ALL (RIG_FUNC_NB|RIG_FUNC_COMP|RIG_FUNC_VOX|RIG_FUNC_NR|RIG_FUNC_NR|RIG_FUNC_BC|RIG_FUNC_BC2|RIG_FUNC_RIT|RIG_FUNC_XIT| \
     RIG_FUNC_TUNER|RIG_FUNC_MON|RIG_FUNC_FBKIN|RIG_FUNC_LOCK)
@@ -94,6 +95,8 @@
 #define TOK_LEVEL_TX_SIDETONE_VOLUME TOKEN_BACKEND(108)
 #define TOK_LEVEL_ACC2_AUDIO_INPUT_LEVEL TOKEN_BACKEND(109)
 #define TOK_LEVEL_ACC2_AUDIO_OUTPUT_LEVEL TOKEN_BACKEND(110)
+// these two USB_AUDIO items are being kept for backwards compatibility
+// replaced by RIG_LEVEL_USB_AF and RIG_LEVEL_USB_AF_INPUT
 #define TOK_LEVEL_USB_AUDIO_INPUT_LEVEL TOKEN_BACKEND(113)
 #define TOK_LEVEL_USB_AUDIO_OUTPUT_LEVEL TOKEN_BACKEND(114)
 #define TOK_LEVEL_DSP_TX_SSB_AM_LOW_CUT_FILTER TOKEN_BACKEND(115)
@@ -215,6 +218,8 @@ static int ts590_set_mode(RIG *rig, vfo_t vfo, rmode_t mode, pbwidth_t width)
     char kmode = rmode2kenwood(mode, caps->mode_table);
     char cmd[32], c;
     int retval = -RIG_EINTERNAL;
+    int hwidth = 0;
+    // int lwidth; // not implemented yet until new API is created
 
     if (kmode < 0)
     {
@@ -235,7 +240,7 @@ static int ts590_set_mode(RIG *rig, vfo_t vfo, rmode_t mode, pbwidth_t width)
     if (!sf_fails)
     {
         SNPRINTF(cmd, sizeof(cmd), "SF%d%011.0f%c", vfo == RIG_VFO_A ? 0 : 1,
-                 vfo == RIG_VFO_A ? rig->state.cache.freqMainA : rig->state.cache.freqMainB,
+                 vfo == RIG_VFO_A ? CACHE(rig)->freqMainA : CACHE(rig)->freqMainB,
                  c);
         retval = kenwood_transaction(rig, cmd, NULL, 0);
     }
@@ -243,6 +248,73 @@ static int ts590_set_mode(RIG *rig, vfo_t vfo, rmode_t mode, pbwidth_t width)
     if (retval != RIG_OK || sf_fails)
     {
         return kenwood_set_mode(rig, vfo, mode, width);
+    }
+
+    if (width != RIG_PASSBAND_NOCHANGE)
+    {
+        if (mode == RIG_MODE_CW || mode == RIG_MODE_CWR)
+        {
+            const int cw_table[] = { 50, 80, 100, 150, 200, 250, 300, 400, 500, 600, 1000, 1500, 2000, 2500 };
+            int twidth = 2500;  // maximum
+
+            for (int i = 0; i < sizeof(cw_table) / sizeof(int); ++i)
+            {
+                if (cw_table[i] >= width) { twidth = cw_table[i]; break; }
+            }
+
+            SNPRINTF(cmd, sizeof(cmd), "FW%04d;", twidth);
+            retval = kenwood_transaction(rig, cmd, NULL, 0);
+            return retval;
+        }
+        else if (mode == RIG_MODE_RTTY || mode == RIG_MODE_RTTYR)
+        {
+            const int cw_table[] = { 250, 500, 1000, 1500 };
+            int twidth = 1500;  // maximum
+
+            for (int i = 0; i < sizeof(cw_table) / sizeof(int); ++i)
+            {
+                if (cw_table[i] >= width) { twidth = cw_table[i]; break; }
+            }
+
+            SNPRINTF(cmd, sizeof(cmd), "FW%04d;", twidth);
+            retval = kenwood_transaction(rig, cmd, NULL, 0);
+            return retval;
+        }
+        else if (mode == RIG_MODE_PKTUSB || mode == RIG_MODE_PKTLSB)
+        {
+            const int pkt_htable[] = { 1000, 1200, 1400, 1600, 1800, 2000, 2200, 2400, 2600, 2800, 3000, 3400, 4000, 5000 };
+
+            // not setting SL since no API for it yet
+            // we will just set SH based on requested bandwidth not taking SL into account
+            //const int ssb_ltable[] = { 0, 50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000 };
+            for (int i = 0; i < sizeof(pkt_htable) / sizeof(int); ++i)
+            {
+                if (pkt_htable[i] >= width) { hwidth = i; break; }
+            }
+        }
+        else if (mode == RIG_MODE_AM || mode == RIG_MODE_PKTAM)
+        {
+            const int am_htable[] = { 2500, 3000, 4000, 5000 };
+
+            //const int am_ltable[] = { 0, 100, 200, 300 };
+            for (int i = 0; i < sizeof(am_htable) / sizeof(int); ++i)
+            {
+                if (am_htable[i] >= width) { hwidth = i; break; }
+            }
+        }
+        else if (mode == RIG_MODE_SSB || mode == RIG_MODE_LSB || mode == RIG_MODE_USB)
+        {
+            const int ssb_htable[] = { 1000, 1200, 1400, 1600, 1800, 2000, 2200, 2400, 2600, 2800, 3000, 3400, 4000, 5000 };
+
+            //const int ssb_ltable[] = { 0, 50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000 };
+            for (int i = 0; i < sizeof(ssb_htable) / sizeof(int); ++i)
+            {
+                if (ssb_htable[i] >= width) { hwidth = i; break; }
+            }
+        }
+
+        SNPRINTF(cmd, sizeof(cmd), "SH%02d;", hwidth);
+        retval = kenwood_transaction(rig, cmd, NULL, 0);
     }
 
     return retval;
@@ -254,9 +326,11 @@ static int ts590_get_mode(RIG *rig, vfo_t vfo, rmode_t *mode, pbwidth_t *width)
     char cmd[32], ackbuf[32];
     int retval;
 
-    if (vfo == RIG_VFO_CURR) { vfo = rig->state.current_vfo; }
+    if (vfo == RIG_VFO_CURR) { vfo = STATE(rig)->current_vfo; }
 
-    if (vfo == RIG_VFO_TX || vfo == RIG_VFO_RX) { vfo = vfo_fixup(rig, vfo, rig->state.cache.split); }
+    if (vfo == RIG_VFO_TX || vfo == RIG_VFO_RX) { vfo = vfo_fixup(rig, vfo, CACHE(rig)->split); }
+
+    retval = RIG_OK;
 
     if (!sf_fails)
     {
@@ -279,19 +353,49 @@ static int ts590_get_mode(RIG *rig, vfo_t vfo, rmode_t *mode, pbwidth_t *width)
     *mode = kenwood2rmode(*mode, caps->mode_table);
 
     // now let's get our widths
+    // CW is different then other modes
+    if (*mode == RIG_MODE_CW || *mode == RIG_MODE_CWR || *mode == RIG_MODE_RTTY
+            || *mode == RIG_MODE_RTTYR)
+    {
+        SNPRINTF(cmd, sizeof(cmd), "FW");
+        retval = kenwood_safe_transaction(rig, cmd, ackbuf, sizeof(ackbuf), 6);
+
+        if (retval == RIG_OK)
+        {
+            int twidth;
+            sscanf(ackbuf, "FW%d", &twidth);
+            *width = twidth;
+        }
+
+        return retval;
+    }
+
     SNPRINTF(cmd, sizeof(cmd), "SH");
     retval = kenwood_safe_transaction(rig, cmd, ackbuf, sizeof(ackbuf), 4);
+
+    if (retval != RIG_OK)
+    {
+        rig_debug(RIG_DEBUG_ERR, "%s: SH command failed: %s\n", __func__,
+                  rigerror(retval));
+        return retval;
+    }
+
     int hwidth;
-    sscanf(cmd, "SH%d", &hwidth);
+    sscanf(ackbuf, "SH%d", &hwidth);
     int lwidth;
     int shift = 0;
     SNPRINTF(cmd, sizeof(cmd), "SL");
-    sscanf(cmd, "SH%d", &lwidth);
     retval = kenwood_safe_transaction(rig, cmd, ackbuf, sizeof(ackbuf), 4);
+    sscanf(ackbuf, "SL%d", &lwidth);
 
-    if (*mode == RIG_MODE_PKTUSB || *mode == RIG_MODE_PKTLSB
-            || *mode == RIG_MODE_FM || *mode == RIG_MODE_PKTFM || *mode == RIG_MODE_USB
-            || *mode == RIG_MODE_LSB)
+    if (retval != RIG_OK)
+    {
+        rig_debug(RIG_DEBUG_ERR, "%s: SL command failed: %s\n", __func__,
+                  rigerror(retval));
+        return retval;
+    }
+
+    if (*mode == RIG_MODE_PKTUSB || *mode == RIG_MODE_PKTLSB)
     {
         const int ssb_htable[] = { 1000, 1200, 1400, 1600, 1800, 2000, 2200, 2400, 2600, 2800, 3000, 3400, 4000, 5000 };
         const int ssb_ltable[] = { 0, 50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000 };
@@ -306,14 +410,14 @@ static int ts590_get_mode(RIG *rig, vfo_t vfo, rmode_t *mode, pbwidth_t *width)
         *width = am_htable[hwidth] - am_ltable[lwidth];
     }
 
-#if 0 // is this different?  Manual is confusing
-    else if (*mode == RIG_MODE_SSB || *mode == RIG_MODE_LSB)
+    else if (*mode == RIG_MODE_SSB || *mode == RIG_MODE_LSB
+             || *mode == RIG_MODE_USB)
     {
         const int ssb_htable[] = { 1000, 1200, 1400, 1600, 1800, 2000, 2200, 2400, 2600, 2800, 3000, 3400, 4000, 5000 };
-        //const int ssb_ltable[] = { 0, 50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000 };
+        const int ssb_ltable[] = { 0, 50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000 };
+        *width = ssb_htable[hwidth] - ssb_ltable[lwidth];
     }
 
-#endif
     rig_debug(RIG_DEBUG_VERBOSE, "%s: width=%ld, shift=%d, lwidth=%d, hwidth=%d\n",
               __func__, *width, shift, lwidth, hwidth);
 
@@ -359,7 +463,7 @@ static int ts590_set_func(RIG *rig, vfo_t vfo, setting_t func, int status)
 {
     char buf[20];
 
-    rig_debug(RIG_DEBUG_TRACE, "%s called\n", __func__);
+    ENTERFUNC;
 
     switch (func)
     {
@@ -377,7 +481,7 @@ static int ts590_set_func(RIG *rig, vfo_t vfo, setting_t func, int status)
         RETURNFUNC(kenwood_transaction(rig, buf, NULL, 0));
 
     default:
-        return kenwood_set_func(rig, vfo, func, status);
+        RETURNFUNC(kenwood_set_func(rig, vfo, func, status));
     }
 }
 
@@ -429,7 +533,7 @@ static int ts590_get_func(RIG *rig, vfo_t vfo, setting_t func, int *status)
         RETURNFUNC(RIG_OK);
 
     default:
-        return kenwood_get_func(rig, vfo, func, status);
+        RETURNFUNC(kenwood_get_func(rig, vfo, func, status));
     }
 
     RETURNFUNC(RIG_OK);
@@ -437,22 +541,41 @@ static int ts590_get_func(RIG *rig, vfo_t vfo, setting_t func, int *status)
 
 static int ts590_set_level(RIG *rig, vfo_t vfo, setting_t level, value_t val)
 {
-    struct kenwood_priv_data *priv = rig->state.priv;
+    struct kenwood_priv_data *priv = STATE(rig)->priv;
     char levelbuf[16];
     int kenwood_val;
     int result;
+    int cmd;
 
-    rig_debug(RIG_DEBUG_TRACE, "%s called\n", __func__);
+    ENTERFUNC;
 
     switch (level)
     {
+    case RIG_LEVEL_USB_AF:
+        kenwood_val = roundl((val.f + .045) * 9);
+        cmd = 65; // TS-590S
+
+        if (rig->caps->rig_model == RIG_MODEL_TS590SG) { cmd = 72; }
+
+        SNPRINTF(levelbuf, sizeof(levelbuf), "EX%03d0000%d", cmd, kenwood_val);
+        break;
+
+    case RIG_LEVEL_USB_AF_INPUT:
+        kenwood_val = roundl((val.f + .045) * 9);
+        cmd = 64; // TS-590S
+
+        if (rig->caps->rig_model == RIG_MODEL_TS590SG) { cmd = 71; }
+
+        SNPRINTF(levelbuf, sizeof(levelbuf), "EX%03d0000%d", cmd, kenwood_val);
+        break;
+
     case RIG_LEVEL_RF:
         kenwood_val = val.f * 255;
         SNPRINTF(levelbuf, sizeof(levelbuf), "RG%03d", kenwood_val);
         break;
 
     case RIG_LEVEL_AF:
-        return kenwood_set_level(rig, vfo, level, val);
+        RETURNFUNC(kenwood_set_level(rig, vfo, level, val));
 
     case RIG_LEVEL_SQL:
         kenwood_val = val.f * 255;
@@ -487,7 +610,7 @@ static int ts590_set_level(RIG *rig, vfo_t vfo, setting_t level, value_t val)
 
         default:
             rig_debug(RIG_DEBUG_ERR, "%s: unsupported agc value", __func__);
-            return -RIG_EINVAL;
+            RETURNFUNC(-RIG_EINVAL);
         }
 
         SNPRINTF(levelbuf, sizeof(levelbuf), "GT%02d", kenwood_val);
@@ -536,28 +659,6 @@ static int ts590_set_level(RIG *rig, vfo_t vfo, setting_t level, value_t val)
         SNPRINTF(levelbuf, sizeof(levelbuf), "RA%02d", (val.i == 12) ? 1 : 0);
         break;
 
-    case RIG_LEVEL_METER:
-        switch (val.i)
-        {
-        case RIG_METER_SWR:
-            kenwood_val = 1;
-            break;
-
-        case RIG_METER_COMP:
-            kenwood_val = 2;
-            break;
-
-        case RIG_METER_ALC:
-            kenwood_val = 3;
-            break;
-
-        default:
-            RETURNFUNC(-RIG_EINVAL);
-        }
-
-        SNPRINTF(levelbuf, sizeof(levelbuf), "RM%d", kenwood_val);
-        break;
-
     case RIG_LEVEL_CWPITCH:
         if (val.i > 1000 || val.i < 300)
         {
@@ -580,13 +681,13 @@ static int ts590_read_meters(RIG *rig, int *swr, int *comp, int *alc)
 {
     int retval;
     char *cmd = "RM;";
-    struct rig_state *rs = &rig->state;
+    struct hamlib_port *rp = RIGPORT(rig);
     char ackbuf[32];
     int expected_len = 24;
 
     ENTERFUNC;
 
-    retval = write_block(&rs->rigport, (unsigned char *) cmd, strlen(cmd));
+    retval = write_block(rp, (unsigned char *) cmd, strlen(cmd));
 
     rig_debug(RIG_DEBUG_TRACE, "%s: write_block retval=%d\n", __func__, retval);
 
@@ -597,7 +698,7 @@ static int ts590_read_meters(RIG *rig, int *swr, int *comp, int *alc)
 
     // TS-590 returns values for all meters at the same time, for example: RM10000;RM20000;RM30000;
 
-    retval = read_string(&rs->rigport, (unsigned char *) ackbuf, expected_len + 1,
+    retval = read_string(rp, (unsigned char *) ackbuf, expected_len + 1,
                          NULL, 0, 0, 1);
 
     rig_debug(RIG_DEBUG_TRACE, "%s: read_string retval=%d\n", __func__, retval);
@@ -630,41 +731,78 @@ static int ts590_read_meters(RIG *rig, int *swr, int *comp, int *alc)
 
 static int ts590_get_level(RIG *rig, vfo_t vfo, setting_t level, value_t *val)
 {
-    struct kenwood_priv_data *priv = rig->state.priv;
+    struct kenwood_priv_data *priv = STATE(rig)->priv;
     char ackbuf[50];
     size_t ack_len, ack_len_expected;
-    int levelint;
+    int levelint = 0;
     int retval;
+    int cmd;
 
     ENTERFUNC;
 
     switch (level)
     {
+    case RIG_LEVEL_USB_AF:
+        cmd = 65; // TS-590S
+
+        if (rig->caps->rig_model == RIG_MODEL_TS590SG) { cmd = 72; }
+
+        retval = ts590_get_ex_menu(rig, cmd, 1, &levelint);
+
+        if (levelint == 9)
+        {
+            val->f = 1.0;
+        }
+        else
+        {
+            val->f = roundl(levelint * 10 / 10.0 + .04) / 10.0;
+        }
+
+        RETURNFUNC(retval);
+
+    case RIG_LEVEL_USB_AF_INPUT:
+        cmd = 64; // TS-590S
+
+        if (rig->caps->rig_model == RIG_MODEL_TS590SG) { cmd = 71; }
+
+        retval = ts590_get_ex_menu(rig, cmd, 1, &levelint);
+
+        if (levelint == 9)
+        {
+            val->f = 1.0;
+        }
+        else
+        {
+            val->f = roundl(levelint * 10 / 10.0) / 10.0;
+        }
+
+        RETURNFUNC(retval);
+
     case RIG_LEVEL_AF:
-        return kenwood_get_level(rig, vfo, level, val);
+        RETURNFUNC(kenwood_get_level(rig, vfo, level, val));
 
     case RIG_LEVEL_RF:
         retval = kenwood_transaction(rig, "RG", ackbuf, sizeof(ackbuf));
 
         if (RIG_OK != retval)
         {
-            return retval;
+            RETURNFUNC(retval);
         }
 
         ack_len = strlen(ackbuf);
 
         if (5 != ack_len)
         {
-            return -RIG_EPROTO;
+            RETURNFUNC(-RIG_EPROTO);
         }
 
         if (1 != sscanf(&ackbuf[2], "%d", &levelint))
         {
-            return -RIG_EPROTO;
+            RETURNFUNC(-RIG_EPROTO);
         }
 
         val->f = levelint / (float) 255;
-        return RIG_OK;
+        RETURNFUNC(RIG_OK);
 
     case RIG_LEVEL_SQL:
         retval = kenwood_transaction(rig, "SQ0", ackbuf, sizeof(ackbuf));
@@ -672,23 +810,23 @@ static int ts590_get_level(RIG *rig, vfo_t vfo, setting_t level, value_t *val)
 
         if (RIG_OK != retval)
         {
-            return retval;
+            RETURNFUNC(retval);
         }
 
         ack_len = strlen(ackbuf);
 
         if (ack_len != ack_len_expected)
         {
-            return -RIG_EPROTO;
+            RETURNFUNC(-RIG_EPROTO);
         }
 
         if (1 != sscanf(&ackbuf[ack_len_expected - 3], "%d", &levelint))
         {
-            return -RIG_EPROTO;
+            RETURNFUNC(-RIG_EPROTO);
         }
 
         val->f = (float) levelint / 255.;
-        return RIG_OK;
+        RETURNFUNC(RIG_OK);
 
     case RIG_LEVEL_AGC:
         priv->question_mark_response_means_rejected = 1;
@@ -698,19 +836,19 @@ static int ts590_get_level(RIG *rig, vfo_t vfo, setting_t level, value_t *val)
 
         if (RIG_OK != retval)
         {
-            return retval;
+            RETURNFUNC(retval);
         }
 
         ack_len = strlen(ackbuf);
 
         if (ack_len != ack_len_expected)
         {
-            return -RIG_EPROTO;
+            RETURNFUNC(-RIG_EPROTO);
         }
 
         if (1 != sscanf(&ackbuf[ack_len_expected - 2], "%d", &levelint))
         {
-            return -RIG_EPROTO;
+            RETURNFUNC(-RIG_EPROTO);
         }
 
         if (levelint == 0)
@@ -734,16 +872,16 @@ static int ts590_get_level(RIG *rig, vfo_t vfo, setting_t level, value_t *val)
             val->i = RIG_AGC_SLOW;
         }
 
-        return RIG_OK;
+        RETURNFUNC(RIG_OK);
 
     case RIG_LEVEL_STRENGTH:
-        if (rig->state.cache.ptt != RIG_PTT_OFF)
+        if (CACHE(rig)->ptt != RIG_PTT_OFF)
         {
             val->i = -9 * 6;
             break;
         }
 
-        return kenwood_get_level(rig, vfo, level, val);
+        RETURNFUNC(kenwood_get_level(rig, vfo, level, val));
 
     case RIG_LEVEL_MONITOR_GAIN:
     {
@@ -866,17 +1004,25 @@ static int ts590_get_level(RIG *rig, vfo_t vfo, setting_t level, value_t *val)
             break;
 
         default:
-            return -RIG_ENAVAIL;
+            RETURNFUNC(-RIG_ENAVAIL);
         }
 
         break;
     }
 
     case RIG_LEVEL_RFPOWER_METER:
+    case RIG_LEVEL_RFPOWER_METER_WATTS:
     {
+        static cal_table_t power_meter =
+        {
+            7, { { 0, 0}, { 3, 5}, { 6, 10}, { 8, 15}, {12, 25},
+                { 17, 50}, { 30, 100}
+            }
+        };
+
         int raw_value;
 
-        if (rig->state.cache.ptt == RIG_PTT_OFF)
+        if (CACHE(rig)->ptt == RIG_PTT_OFF)
         {
             val->f = 0;
             break;
@@ -891,7 +1037,18 @@ static int ts590_get_level(RIG *rig, vfo_t vfo, setting_t level, value_t *val)
 
         sscanf(ackbuf, "SM0%d", &raw_value);
 
-        val->f = (float) raw_value / 30.0f;
+//        val->f = (float) raw_value / 30.0f;
+
+        if (level == RIG_LEVEL_RFPOWER_METER_WATTS)
+        {
+            val->f = roundf(rig_raw2val(raw_value, &power_meter));
+            if (val->f < 10)
+            {
+                val->f = roundf(rig_raw2val(raw_value, &power_meter) * 10.0) / 10.0;
+            }
+
+        }
+
         break;
     }
 
@@ -910,7 +1067,7 @@ static int ts590_get_level(RIG *rig, vfo_t vfo, setting_t level, value_t *val)
     }
 
     default:
-        return kenwood_get_level(rig, vfo, level, val);
+        RETURNFUNC(kenwood_get_level(rig, vfo, level, val));
     }
 
     RETURNFUNC(RIG_OK);
@@ -991,7 +1148,7 @@ static int ts590_get_rit(RIG *rig, vfo_t vfo, shortfreq_t *rit)
 {
     int retval;
     char buf[7];
-    struct kenwood_priv_data *priv = rig->state.priv;
+    struct kenwood_priv_data *priv = STATE(rig)->priv;
 
     ENTERFUNC;
 
@@ -1015,7 +1172,8 @@ static int ts590_get_rit(RIG *rig, vfo_t vfo, shortfreq_t *rit)
     RETURNFUNC(RIG_OK);
 }
 
-static int ts590_set_ext_func(RIG *rig, vfo_t vfo, token_t token, int status)
+static int ts590_set_ext_func(RIG *rig, vfo_t vfo, hamlib_token_t token,
+                              int status)
 {
     char cmdbuf[20];
     int retval;
@@ -1041,9 +1199,9 @@ static int ts590_set_ext_func(RIG *rig, vfo_t vfo, token_t token, int status)
     RETURNFUNC(retval);
 }
 
-static int ts590_get_ext_func(RIG *rig, vfo_t vfo, token_t token, int *status)
+static int ts590_get_ext_func(RIG *rig, vfo_t vfo, hamlib_token_t token,
+                              int *status)
 {
-    char ackbuf[20];
     int retval;
 
     ENTERFUNC;
@@ -1053,6 +1211,7 @@ static int ts590_get_ext_func(RIG *rig, vfo_t vfo, token_t token, int *status)
     case TOK_FUNC_NOISE_REDUCTION_2:
     {
         int value;
+        char ackbuf[20];
 
         retval = kenwood_safe_transaction(rig, "NR", ackbuf, sizeof(ackbuf), 3);
 
@@ -1074,7 +1233,8 @@ static int ts590_get_ext_func(RIG *rig, vfo_t vfo, token_t token, int *status)
     RETURNFUNC(retval);
 }
 
-static int ts590_set_ext_level(RIG *rig, vfo_t vfo, token_t token, value_t val)
+static int ts590_set_ext_level(RIG *rig, vfo_t vfo, hamlib_token_t token,
+                               value_t val)
 {
     int retval;
 
@@ -1252,7 +1412,7 @@ static int ts590_set_ext_level(RIG *rig, vfo_t vfo, token_t token, value_t val)
 
         break;
 
-    case TOK_LEVEL_USB_AUDIO_INPUT_LEVEL:
+    case TOK_LEVEL_USB_AUDIO_INPUT_LEVEL: // keep for backwards compatibility
         if (val.f < 0 || val.f > 9)
         {
             RETURNFUNC(-RIG_EINVAL);
@@ -1269,7 +1429,7 @@ static int ts590_set_ext_level(RIG *rig, vfo_t vfo, token_t token, value_t val)
 
         break;
 
-    case TOK_LEVEL_USB_AUDIO_OUTPUT_LEVEL:
+    case TOK_LEVEL_USB_AUDIO_OUTPUT_LEVEL: // keep for backwards compatibility
         if (val.f < 0 || val.f > 9)
         {
             RETURNFUNC(-RIG_EINVAL);
@@ -1293,7 +1453,8 @@ static int ts590_set_ext_level(RIG *rig, vfo_t vfo, token_t token, value_t val)
     RETURNFUNC(retval);
 }
 
-static int ts590_get_ext_level(RIG *rig, vfo_t vfo, token_t token, value_t *val)
+static int ts590_get_ext_level(RIG *rig, vfo_t vfo, hamlib_token_t token,
+                               value_t *val)
 {
     int retval;
     int value;
@@ -1541,17 +1702,18 @@ static struct kenwood_priv_caps ts590_priv_caps =
     .filter_width = ts590_filter_width,
     .slope_filter_high = ts590_slope_filter_high,
     .slope_filter_low = ts590_slope_filter_low,
+    .tone_table_base = 0,
 };
 
 /**
  * TS-590 rig capabilities
  */
-const struct rig_caps ts590_caps =
+struct rig_caps ts590_caps =
 {
     RIG_MODEL(RIG_MODEL_TS590S),
     .model_name = "TS-590S",
     .mfg_name = "Kenwood",
-    .version = BACKEND_VER ".7",
+    .version = BACKEND_VER ".17",
     .copyright = "LGPL",
     .status = RIG_STATUS_STABLE,
     .rig_type = RIG_TYPE_TRANSCEIVER,
@@ -1668,8 +1830,10 @@ const struct rig_caps ts590_caps =
     .level_gran =
     {
 #include "level_gran_kenwood.h"
-        [LVL_RF] = { .min = { .f = 0 }, .max = { .f = 1.0 },  .step = { .f = 1.0f / 100.0f } },
-        [LVL_AF] = { .min = { .f = 0 }, .max = { .f = 1.0 },  .step = { .f = 1.0f / 100.0f } },
+        [LVL_RF] = { .min = { .f = 0 }, .max = { .f = 1.0 },  .step = { .f = 1.0f / 255.0f } },
+        [LVL_AF] = { .min = { .f = 0 }, .max = { .f = 1.0 },  .step = { .f = 1.0f / 255.0f } },
+        [LVL_USB_AF] = { .min = { .f = 0 }, .max = { .f = 1.0 },  .step = { .f = 1.0f / 10.0f } },
+        [LVL_USB_AF_INPUT] = { .min = { .f = 0 }, .max = { .f = 1.0 },  .step = { .f = 1.0f / 10.0f } },
         [LVL_VOXDELAY] = { .min = { .i = 0 }, .max = { .i = 30 }, .step = { .i = 1 } },
         [LVL_CWPITCH] = {.min = {.i = 300}, .max = {.i = 1000}, .step = {.i = 50}},
         [LVL_BKIN_DLYMS] = {.min = {.i = 0}, .max = {.i = 1000}, .step = {.i = 50}},
@@ -1744,12 +1908,12 @@ const struct rig_caps ts590_caps =
  * Supposed to be 590S compatible
  * Separate entry allows for customization
  */
-const struct rig_caps fx4_caps =
+struct rig_caps fx4_caps =
 {
     RIG_MODEL(RIG_MODEL_FX4),
     .model_name = "FX4/C/CR/L",
     .mfg_name = "BG2FX",
-    .version = BACKEND_VER ".7",
+    .version = BACKEND_VER ".10",
     .copyright = "LGPL",
     .status = RIG_STATUS_STABLE,
     .rig_type = RIG_TYPE_TRANSCEIVER,
@@ -1863,7 +2027,7 @@ const struct rig_caps fx4_caps =
     {
 #include "level_gran_kenwood.h"
         [LVL_RF] = { .min = { .f = 0 }, .max = { .f = 1.0 },  .step = { .f = 1.0f / 100.0f } },
-        [LVL_AF] = { .min = { .f = 0 }, .max = { .f = 1.0 },  .step = { .f = 1.0f / 100.0f } },
+        [LVL_AF] = { .min = { .f = 0 }, .max = { .f = 1.0 },  .step = { .f = 1.0f / 255.0f } },
         [LVL_VOXDELAY] = { .min = { .i = 0 }, .max = { .i = 30 }, .step = { .i = 1 } },
         [LVL_CWPITCH] = {.min = {.i = 300}, .max = {.i = 1000}, .step = {.i = 50}},
         [LVL_BKIN_DLYMS] = {.min = {.i = 0}, .max = {.i = 1000}, .step = {.i = 50}},
@@ -1926,6 +2090,8 @@ const struct rig_caps fx4_caps =
     .send_morse =  kenwood_send_morse,
     .stop_morse =  kenwood_stop_morse,
     .wait_morse =  rig_wait_morse,
+    .send_voice_mem = kenwood_send_voice_mem,
+    .stop_voice_mem = kenwood_stop_voice_mem,
     .set_mem =  kenwood_set_mem,
     .get_mem =  kenwood_get_mem,
     .vfo_ops = TS590_VFO_OPS,
@@ -1936,12 +2102,12 @@ const struct rig_caps fx4_caps =
 /**
  * TS-590SG rig capabilities
  */
-const struct rig_caps ts590sg_caps =
+struct rig_caps ts590sg_caps =
 {
     RIG_MODEL(RIG_MODEL_TS590SG),
     .model_name = "TS-590SG",
     .mfg_name = "Kenwood",
-    .version = BACKEND_VER ".5",
+    .version = BACKEND_VER ".11",
     .copyright = "LGPL",
     .status = RIG_STATUS_STABLE,
     .rig_type = RIG_TYPE_TRANSCEIVER,
@@ -1971,6 +2137,7 @@ const struct rig_caps ts590sg_caps =
     .chan_list =  { /* TBC */
         {  0, 89, RIG_MTYPE_MEM,  TS590_CHANNEL_CAPS },
         { 90, 99, RIG_MTYPE_EDGE, TS590_CHANNEL_CAPS },
+        {  1,  3, RIG_MTYPE_MORSE },
         RIG_CHAN_END,
     },
 
@@ -2057,8 +2224,10 @@ const struct rig_caps ts590sg_caps =
     },
     .level_gran = {
 #include "level_gran_kenwood.h"
-        [LVL_RF] = { .min = { .f = 0 }, .max = { .f = 1.0 },  .step = { .f = 1.0f / 100.0f } },
-        [LVL_AF] = { .min = { .f = 0 }, .max = { .f = 1.0 },  .step = { .f = 1.0f / 100.0f } },
+        [LVL_RF] = { .min = { .f = 0 }, .max = { .f = 1.0 },  .step = { .f = 1.0f / 255.0f } },
+        [LVL_AF] = { .min = { .f = 0 }, .max = { .f = 1.0 },  .step = { .f = 1.0f / 255.0f } },
+        [LVL_USB_AF] = { .min = { .f = 0 }, .max = { .f = 1.0 },  .step = { .f = 1.0f / 10.0f } },
+        [LVL_USB_AF_INPUT] = { .min = { .f = 0 }, .max = { .f = 1.0 },  .step = { .f = 1.0f / 10.0f } },
         [LVL_VOXDELAY] = { .min = { .i = 0 }, .max = { .i = 30 }, .step = { .i = 1 } },
         [LVL_CWPITCH] = {.min = {.i = 300}, .max = {.i = 1000}, .step = {.i = 50}},
         [LVL_BKIN_DLYMS] = {.min = {.i = 0}, .max = {.i = 1000}, .step = {.i = 50}},

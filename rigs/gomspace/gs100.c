@@ -71,7 +71,7 @@ struct gs100_priv_data
 /* Imported Functions --------------------------------------------------------*/
 
 struct ext_list *alloc_init_ext(const struct confparams *cfp);
-struct ext_list *find_ext(struct ext_list *elp, token_t token);
+struct ext_list *find_ext(struct ext_list *elp, hamlib_token_t token);
 
 /* Private function prototypes -----------------------------------------------*/
 
@@ -83,7 +83,8 @@ static int gomx_set(RIG *rig, int table, char *varname, char *varvalue);
 /**
  * Get variable from the GS100 configuration table
  */
-static int gomx_get(RIG *rig, int table, char *varname, char *varvalue);
+static int gomx_get(RIG *rig, int table, char *varname, const char *varvalue,
+                    int varvalue_len);
 
 /**
  * Sends a message to the GS100 and parses response lines
@@ -99,11 +100,6 @@ static int gs100_init(RIG *rig)
 
     ENTERFUNC;
 
-    if (!rig || !rig->caps)
-    {
-        RETURNFUNC(-RIG_EINVAL);
-    }
-
     priv = (struct gs100_priv_data *)calloc(1, sizeof(struct gs100_priv_data));
 
     if (!priv)
@@ -111,10 +107,10 @@ static int gs100_init(RIG *rig)
         RETURNFUNC(-RIG_ENOMEM);
     }
 
-    rig->state.priv = (void *)priv;
+    STATE(rig)->priv = (void *)priv;
 
 #ifdef _LOCAL_SIMULATION_
-    rig->state.rigport.type.rig = RIG_PORT_NONE;  // just simulation
+    RIGPORT(rig)->type.rig = RIG_PORT_NONE;  // just simulation
     priv->freq_rx = rig->caps->rx_range_list1->startf;
     priv->freq_tx = rig->caps->tx_range_list1->startf;
 #endif
@@ -130,12 +126,12 @@ static int gs100_cleanup(RIG *rig)
 {
     ENTERFUNC;
 
-    if (rig->state.priv)
+    if (STATE(rig)->priv)
     {
-        free(rig->state.priv);
+        free(STATE(rig)->priv);
     }
 
-    rig->state.priv = NULL;
+    STATE(rig)->priv = NULL;
 
     RETURNFUNC(RIG_OK);
 }
@@ -170,14 +166,14 @@ static int gs100_close(RIG *rig)
 
 
 /* GS100 transceiver set configuration */
-static int gs100_set_conf(RIG *rig, token_t token, const char *val)
+static int gs100_set_conf(RIG *rig, hamlib_token_t token, const char *val)
 {
     __attribute__((unused)) struct gs100_priv_data *priv = (struct gs100_priv_data
-            *)rig->state.priv;
+            *)STATE(rig)->priv;
 
     ENTERFUNC;
 
-    priv = (struct gs100_priv_data *)rig->state.priv;
+    priv = (struct gs100_priv_data *)STATE(rig)->priv;
 
     switch (token)
     {
@@ -196,14 +192,14 @@ static int gs100_set_conf(RIG *rig, token_t token, const char *val)
 
 
 /* GS100 transceiver get configuration */
-static int gs100_get_conf(RIG *rig, token_t token, char *val)
+static int gs100_get_conf(RIG *rig, hamlib_token_t token, char *val)
 {
     __attribute__((unused)) struct gs100_priv_data *priv = (struct gs100_priv_data
-            *)rig->state.priv;
+            *)STATE(rig)->priv;
 
     ENTERFUNC;
 
-    priv = (struct gs100_priv_data *)rig->state.priv;
+    priv = (struct gs100_priv_data *)STATE(rig)->priv;
 
     switch (token)
     {
@@ -222,8 +218,9 @@ static int gs100_get_conf(RIG *rig, token_t token, char *val)
 static int gs100_set_freq(RIG *rig, vfo_t vfo, freq_t freq)
 {
 #ifdef _LOCAL_SIMULATION_
-    __attribute__((unused)) const struct gs100_priv_data *priv = (struct gs100_priv_data
-            *)rig->state.priv;
+    __attribute__((unused)) const struct gs100_priv_data *priv =
+        (struct gs100_priv_data
+         *)STATE(rig)->priv;
 #endif
     char fstr[20], value[20];
     int retval;
@@ -256,8 +253,9 @@ static int gs100_set_freq(RIG *rig, vfo_t vfo, freq_t freq)
 static int gs100_get_freq(RIG *rig, vfo_t vfo, freq_t *freq)
 {
 #ifdef _LOCAL_SIMULATION_
-    __attribute__((unused)) const struct gs100_priv_data *priv = (struct gs100_priv_data
-            *)rig->state.priv;
+    __attribute__((unused)) const struct gs100_priv_data *priv =
+        (struct gs100_priv_data
+         *)STATE(rig)->priv;
 #endif
     char resp[20];
     int retval;
@@ -266,7 +264,7 @@ static int gs100_get_freq(RIG *rig, vfo_t vfo, freq_t *freq)
     ENTERFUNC;
 
     // perform the get command
-    retval = gomx_get(rig, GOM_CONFIG_TAB_RX, "freq", resp);
+    retval = gomx_get(rig, GOM_CONFIG_TAB_RX, "freq", resp, sizeof(resp));
 
     if (retval != RIG_OK) { RETURNFUNC(retval); }
 
@@ -292,8 +290,9 @@ static int gs100_get_freq(RIG *rig, vfo_t vfo, freq_t *freq)
 static int gs100_set_tx_freq(RIG *rig, vfo_t vfo, freq_t freq)
 {
 #ifdef _LOCAL_SIMULATION_
-    __attribute__((unused)) const struct gs100_priv_data *priv = (struct gs100_priv_data
-            *)rig->state.priv;
+    __attribute__((unused)) const struct gs100_priv_data *priv =
+        (struct gs100_priv_data
+         *)STATE(rig)->priv;
 #endif
     char fstr[20], value[20];
     int retval;
@@ -326,8 +325,9 @@ static int gs100_set_tx_freq(RIG *rig, vfo_t vfo, freq_t freq)
 static int gs100_get_tx_freq(RIG *rig, vfo_t vfo, freq_t *freq)
 {
 #ifdef _LOCAL_SIMULATION_
-    __attribute__((unused)) const struct gs100_priv_data *priv = (struct gs100_priv_data
-            *)rig->state.priv;
+    __attribute__((unused)) const struct gs100_priv_data *priv =
+        (struct gs100_priv_data
+         *)STATE(rig)->priv;
 #endif
     char resp[20];
     int retval;
@@ -336,7 +336,7 @@ static int gs100_get_tx_freq(RIG *rig, vfo_t vfo, freq_t *freq)
     ENTERFUNC;
 
     // perform the get command
-    retval = gomx_get(rig, GOM_CONFIG_TAB_TX, "freq", resp);
+    retval = gomx_get(rig, GOM_CONFIG_TAB_TX, "freq", resp, sizeof(resp));
 
     if (retval != RIG_OK) { RETURNFUNC(retval); }
 
@@ -380,7 +380,7 @@ struct rig_caps GS100_caps =
     .mfg_name = "GOMSPACE",
     .version = "20211117.0",
     .copyright = "LGPL",
-    .status = RIG_STATUS_BETA,
+    .status = RIG_STATUS_STABLE,
     .rig_type = RIG_TYPE_TRANSCEIVER,
     .targetable_vfo = 0,
     .ptt_type = RIG_PTT_NONE,
@@ -440,7 +440,7 @@ struct rig_caps GS100_caps =
 static int gomx_set(RIG *rig, int table, char *varname, char *varvalue)
 {
     __attribute__((unused)) struct gs100_priv_data *priv = (struct gs100_priv_data
-            *)rig->state.priv;
+            *)STATE(rig)->priv;
     int retval;
     char msg[BUFSZ], resp[BUFSZ];
 
@@ -475,12 +475,14 @@ static int gomx_set(RIG *rig, int table, char *varname, char *varvalue)
 
 
 /* Get variable from the GS100 configuration table */
-static int gomx_get(RIG *rig, int table, char *varname, char *varvalue)
+static int gomx_get(RIG *rig, int table, char *varname, const char *varvalue,
+                    int varvalue_len)
 {
     __attribute__((unused)) struct gs100_priv_data *priv = (struct gs100_priv_data
-            *)rig->state.priv;
+            *)STATE(rig)->priv;
     int retval;
     char msg[BUFSZ], resp[BUFSZ], *c;
+    char fmt[32];
 
     assert(rig != NULL);
     assert(varname != NULL);
@@ -507,7 +509,9 @@ static int gomx_get(RIG *rig, int table, char *varname, char *varvalue)
     // check response and extract the value
     if ((c = strchr(resp, '=')) == NULL) { return (-RIG_EPROTO); }
 
-    if (sscanf(c + 1, "%s", varvalue) != 1) { return (-RIG_EPROTO); }
+    snprintf(fmt, sizeof(fmt), "%%%ds", varvalue_len);
+
+    if (sscanf(c + 1, fmt, varvalue_len) != 1) { return (-RIG_EPROTO); }
 
     return (RIG_OK);
 }
@@ -516,7 +520,7 @@ static int gomx_get(RIG *rig, int table, char *varname, char *varvalue)
 /* Sends a message to the GS100 and parses response lines */
 static int gomx_transaction(RIG *rig, char *message, char *response)
 {
-    struct rig_state *rs;
+    hamlib_port_t *rp;
     int retval, n = 0;
     char buf[BUFSZ];
 
@@ -527,18 +531,18 @@ static int gomx_transaction(RIG *rig, char *message, char *response)
     rig_debug(RIG_DEBUG_TRACE, "%s: msg='%s'\n", __func__,
               message == NULL ? "NULL" : message);
 
-    rs = &rig->state;
+    rp = RIGPORT(rig);
 
     // send message to the transceiver
-    rig_flush(&rs->rigport);
-    retval = write_block(&rs->rigport, (uint8_t *)message, strlen(message));
+    rig_flush(rp);
+    retval = write_block(rp, (uint8_t *)message, strlen(message));
 
     if (retval != RIG_OK) { return (retval); }
 
     while (1)
     {
         // read the response line
-        retval = read_string(&rs->rigport, (unsigned char *)buf, BUFSZ,
+        retval = read_string(rp, (unsigned char *)buf, BUFSZ,
                              (const char *)GOM_STOPSET, 0, strlen(GOM_STOPSET), 0);
 
         if (retval < 0) { return (retval); }

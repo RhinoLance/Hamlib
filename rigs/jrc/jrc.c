@@ -59,7 +59,7 @@
 
 /*
  * jrc_transaction
- * We assume that rig!=NULL, rig->state!= NULL, data!=NULL, data_len!=NULL
+ * We assume that rig!=NULL, RIGPORT(rig)!= NULL, data!=NULL, data_len!=NULL
  * Otherwise, you'll get a nice seg fault. You've been warned!
  * TODO: error case handling
  */
@@ -67,15 +67,13 @@ int jrc_transaction(RIG *rig, const char *cmd, int cmd_len, char *data,
                     int *data_len)
 {
     int retval;
-    struct rig_state *rs;
+    hamlib_port_t *rp = RIGPORT(rig);
 
-    rs = &rig->state;
-
-    rig_flush(&rs->rigport);
+    rig_flush(rp);
 
     set_transaction_active(rig);
 
-    retval = write_block(&rs->rigport, (unsigned char *) cmd, cmd_len);
+    retval = write_block(rp, (unsigned char *) cmd, cmd_len);
 
     if (retval != RIG_OK)
     {
@@ -89,7 +87,7 @@ int jrc_transaction(RIG *rig, const char *cmd, int cmd_len, char *data,
         return 0;
     }
 
-    retval = read_string(&rs->rigport, (unsigned char *) data, BUFSZ, EOM,
+    retval = read_string(rp, (unsigned char *) data, BUFSZ, EOM,
                          strlen(EOM), 0, 1);
 
     set_transaction_inactive(rig);
@@ -285,7 +283,7 @@ int jrc_close(RIG *rig)
  */
 int jrc_set_freq(RIG *rig, vfo_t vfo, freq_t freq)
 {
-    struct jrc_priv_caps *priv = (struct jrc_priv_caps *)rig->caps->priv;
+    const struct jrc_priv_caps *priv = (struct jrc_priv_caps *)rig->caps->priv;
     char freqbuf[BUFSZ];
 
     if (freq >= (freq_t)pow(10, priv->max_freq_len))
@@ -293,8 +291,6 @@ int jrc_set_freq(RIG *rig, vfo_t vfo, freq_t freq)
         return -RIG_EINVAL;
     }
 
-    // cppcheck-suppress *
-    // suppressing bogus cppcheck error in ver 1.90
     SNPRINTF(freqbuf, sizeof(freqbuf), "F%0*"PRIll EOM, priv->max_freq_len,
              (int64_t)freq);
 
@@ -326,7 +322,7 @@ static int get_current_istate(RIG *rig, char *buf, int *buf_len)
  */
 int jrc_get_freq(RIG *rig, vfo_t vfo, freq_t *freq)
 {
-    struct jrc_priv_caps *priv = (struct jrc_priv_caps *)rig->caps->priv;
+    const struct jrc_priv_caps *priv = (struct jrc_priv_caps *)rig->caps->priv;
     int retval;
     char freqbuf[BUFSZ];
     int freq_len;
@@ -431,7 +427,7 @@ int jrc_set_mode(RIG *rig, vfo_t vfo, rmode_t mode, pbwidth_t width)
  */
 int jrc_get_mode(RIG *rig, vfo_t vfo, rmode_t *mode, pbwidth_t *width)
 {
-    struct jrc_priv_caps *priv = (struct jrc_priv_caps *)rig->caps->priv;
+    const struct jrc_priv_caps *priv = (struct jrc_priv_caps *)rig->caps->priv;
     int md_len, retval;
     char mdbuf[BUFSZ];
     char cmode;
@@ -526,7 +522,7 @@ int jrc_set_func(RIG *rig, vfo_t vfo, setting_t func, int status)
  */
 int jrc_get_func(RIG *rig, vfo_t vfo, setting_t func, int *status)
 {
-    struct jrc_priv_caps *priv = (struct jrc_priv_caps *)rig->caps->priv;
+    const struct jrc_priv_caps *priv = (struct jrc_priv_caps *)rig->caps->priv;
     int retval, func_len;
     char funcbuf[BUFSZ];
 
@@ -673,7 +669,7 @@ int jrc_get_func(RIG *rig, vfo_t vfo, setting_t func, int *status)
  */
 int jrc_set_level(RIG *rig, vfo_t vfo, setting_t level, value_t val)
 {
-    struct jrc_priv_caps *priv = (struct jrc_priv_caps *)rig->caps->priv;
+    const struct jrc_priv_caps *priv = (struct jrc_priv_caps *)rig->caps->priv;
     char cmdbuf[BUFSZ];
 
     /* Optimize:
@@ -777,7 +773,7 @@ int jrc_set_level(RIG *rig, vfo_t vfo, setting_t level, value_t val)
  */
 int jrc_get_level(RIG *rig, vfo_t vfo, setting_t level, value_t *val)
 {
-    struct jrc_priv_caps *priv = (struct jrc_priv_caps *)rig->caps->priv;
+    const struct jrc_priv_caps *priv = (struct jrc_priv_caps *)rig->caps->priv;
     int retval, lvl_len, lvl;
     char lvlbuf[BUFSZ];
     char cwbuf[BUFSZ];
@@ -1103,7 +1099,7 @@ int jrc_get_level(RIG *rig, vfo_t vfo, setting_t level, value_t *val)
  */
 int jrc_set_parm(RIG *rig, setting_t parm, value_t val)
 {
-    struct jrc_priv_caps *priv = (struct jrc_priv_caps *)rig->caps->priv;
+    const struct jrc_priv_caps *priv = (struct jrc_priv_caps *)rig->caps->priv;
     char cmdbuf[BUFSZ];
     int minutes;
 
@@ -1146,7 +1142,7 @@ int jrc_set_parm(RIG *rig, setting_t parm, value_t val)
  */
 int jrc_get_parm(RIG *rig, setting_t parm, value_t *val)
 {
-    struct jrc_priv_caps *priv = (struct jrc_priv_caps *)rig->caps->priv;
+    const struct jrc_priv_caps *priv = (struct jrc_priv_caps *)rig->caps->priv;
     int retval, lvl_len, i;
     char lvlbuf[BUFSZ];
     char cmdbuf[BUFSZ];
@@ -1364,7 +1360,7 @@ int jrc_set_mem(RIG *rig, vfo_t vfo, int ch)
  */
 int jrc_get_mem(RIG *rig, vfo_t vfo, int *ch)
 {
-    struct jrc_priv_caps *priv = (struct jrc_priv_caps *)rig->caps->priv;
+    const struct jrc_priv_caps *priv = (struct jrc_priv_caps *)rig->caps->priv;
     int mem_len, retval;
     char membuf[BUFSZ];
     int chan;
@@ -1399,7 +1395,7 @@ int jrc_get_mem(RIG *rig, vfo_t vfo, int *ch)
  */
 int jrc_set_chan(RIG *rig, vfo_t vfo, const channel_t *chan)
 {
-    struct jrc_priv_caps *priv = (struct jrc_priv_caps *)rig->caps->priv;
+    const struct jrc_priv_caps *priv = (struct jrc_priv_caps *)rig->caps->priv;
     char    cmdbuf[BUFSZ];
     int retval;
     rmode_t mode;
@@ -1464,7 +1460,7 @@ int jrc_set_chan(RIG *rig, vfo_t vfo, const channel_t *chan)
  */
 int jrc_get_chan(RIG *rig, vfo_t vfo, channel_t *chan, int read_only)
 {
-    struct jrc_priv_caps *priv = (struct jrc_priv_caps *)rig->caps->priv;
+    const struct jrc_priv_caps *priv = (struct jrc_priv_caps *)rig->caps->priv;
     char    membuf[BUFSZ], cmdbuf[BUFSZ];
     int     mem_len, retval;
 
@@ -1613,8 +1609,7 @@ int jrc_scan(RIG *rig, vfo_t vfo, scan_t scan, int ch)
  */
 int jrc_decode_event(RIG *rig)
 {
-    struct jrc_priv_caps *priv = (struct jrc_priv_caps *)rig->caps->priv;
-    struct rig_state *rs;
+    const struct jrc_priv_caps *priv = (struct jrc_priv_caps *)rig->caps->priv;
     freq_t freq;
     rmode_t mode;
     pbwidth_t width;
@@ -1623,13 +1618,11 @@ int jrc_decode_event(RIG *rig)
 
     rig_debug(RIG_DEBUG_VERBOSE, "%s: jrc_decode called\n", __func__);
 
-    rs = &rig->state;
-
     /* "Iabdfg"CR */
     //#define SETUP_STATUS_LEN 17
 
-    //count = read_string(&rs->rigport, buf, SETUP_STATUS_LEN, "", 0);
-    count = read_string(&rs->rigport, (unsigned char *) buf, priv->info_len, "", 0,
+    //count = read_string(RIGPORT(rig), buf, SETUP_STATUS_LEN, "", 0);
+    count = read_string(RIGPORT(rig), (unsigned char *) buf, priv->info_len, "", 0,
                         0, 1);
 
     if (count < 0)

@@ -345,28 +345,49 @@ int main(int argc, char *argv[])
         exit(2);
     }
 
-    retcode = set_conf(my_rot, conf_parms);
+    char *token = strtok(conf_parms, ",");
 
-    if (retcode != RIG_OK)
+    while (token)
     {
-        fprintf(stderr, "Config parameter error: %s\n", rigerror(retcode));
-        exit(2);
+        char mytoken[100], myvalue[100];
+        hamlib_token_t lookup;
+        sscanf(token, "%99[^=]=%99s", mytoken, myvalue);
+        //printf("mytoken=%s,myvalue=%s\n",mytoken, myvalue);
+        lookup = rot_token_lookup(my_rot, mytoken);
+
+        if (lookup == 0)
+        {
+            rig_debug(RIG_DEBUG_ERR, "%s: no such token as '%s', use -L switch to see\n",
+                      __func__, mytoken);
+            token = strtok(NULL, ",");
+            continue;
+        }
+
+        retcode = rot_set_conf(my_rot, rot_token_lookup(my_rot, mytoken), myvalue);
+
+        if (retcode != RIG_OK)
+        {
+            fprintf(stderr, "Config parameter error: %s\n", rigerror(retcode));
+            exit(2);
+        }
+
+        token = strtok(NULL, ",");
     }
 
     if (rot_file)
     {
-        strncpy(my_rot->state.rotport.pathname, rot_file, HAMLIB_FILPATHLEN - 1);
+        strncpy(ROTPORT(my_rot)->pathname, rot_file, HAMLIB_FILPATHLEN - 1);
     }
 
     if (rot_file2)
     {
-        strncpy(my_rot->state.rotport2.pathname, rot_file2, HAMLIB_FILPATHLEN - 1);
+        strncpy(ROTPORT2(my_rot)->pathname, rot_file2, HAMLIB_FILPATHLEN - 1);
     }
 
     /* FIXME: bound checking and port type == serial */
     if (serial_rate != 0)
     {
-        my_rot->state.rotport.parm.serial.rate = serial_rate;
+        ROTPORT(my_rot)->parm.serial.rate = serial_rate;
     }
 
     /*
@@ -396,8 +417,8 @@ int main(int argc, char *argv[])
         exit(2);
     }
 
-    my_rot->state.az_offset = az_offset;
-    my_rot->state.el_offset = el_offset;
+    ROTSTATE(my_rot)->az_offset = az_offset;
+    ROTSTATE(my_rot)->el_offset = el_offset;
 
     if (verbose > 0)
     {
@@ -621,6 +642,7 @@ int main(int argc, char *argv[])
 
 #else
         handle_socket(arg);
+        retcode = 1;
 #endif
     }
 

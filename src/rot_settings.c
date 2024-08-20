@@ -47,7 +47,7 @@
 
 #ifndef DOC_HIDDEN
 
-#  define CHECK_ROT_ARG(r) (!(r) || !(r)->caps || !(r)->state.comm_state)
+#  define CHECK_ROT_ARG(r) (!(r) || !(r)->caps || !(ROTSTATE(r)->comm_state))
 
 #endif /* !DOC_HIDDEN */
 
@@ -255,7 +255,7 @@ setting_t HAMLIB_API rot_has_get_level(ROT *rot, setting_t level)
         return 0;
     }
 
-    return (rot->state.has_get_level & level);
+    return (ROTSTATE(rot)->has_get_level & level);
 }
 
 
@@ -293,7 +293,7 @@ setting_t HAMLIB_API rot_has_set_level(ROT *rot, setting_t level)
         return 0;
     }
 
-    return (rot->state.has_set_level & level);
+    return (ROTSTATE(rot)->has_set_level & level);
 }
 
 
@@ -330,7 +330,7 @@ setting_t HAMLIB_API rot_has_get_parm(ROT *rot, setting_t parm)
         return 0;
     }
 
-    return (rot->state.has_get_parm & parm);
+    return (ROTSTATE(rot)->has_get_parm & parm);
 }
 
 
@@ -367,7 +367,7 @@ setting_t HAMLIB_API rot_has_set_parm(ROT *rot, setting_t parm)
         return 0;
     }
 
-    return (rot->state.has_set_parm & parm);
+    return (ROTSTATE(rot)->has_set_parm & parm);
 }
 
 
@@ -404,7 +404,7 @@ setting_t HAMLIB_API rot_has_get_func(ROT *rot, setting_t func)
         return 0;
     }
 
-    return (rot->state.has_get_func & func);
+    return (ROTSTATE(rot)->has_get_func & func);
 }
 
 
@@ -440,7 +440,7 @@ setting_t HAMLIB_API rot_has_set_func(ROT *rot, setting_t func)
         return 0;
     }
 
-    return (rot->state.has_set_func & func);
+    return (ROTSTATE(rot)->has_set_func & func);
 }
 
 
@@ -554,7 +554,7 @@ int HAMLIB_API rot_get_func(ROT *rot, setting_t func, int *status)
  *
  * \sa rot_get_ext_level()
  */
-int HAMLIB_API rot_set_ext_level(ROT *rot, token_t token, value_t val)
+int HAMLIB_API rot_set_ext_level(ROT *rot, hamlib_token_t token, value_t val)
 {
     const struct rot_caps *caps;
 
@@ -594,7 +594,7 @@ int HAMLIB_API rot_set_ext_level(ROT *rot, token_t token, value_t val)
  *
  * \sa rot_set_ext_level()
  */
-int HAMLIB_API rot_get_ext_level(ROT *rot, token_t token, value_t *val)
+int HAMLIB_API rot_get_ext_level(ROT *rot, hamlib_token_t token, value_t *val)
 {
     const struct rot_caps *caps;
 
@@ -638,7 +638,7 @@ int HAMLIB_API rot_get_ext_level(ROT *rot, token_t token, value_t *val)
  *
  * \sa rot_get_ext_func()
  */
-int HAMLIB_API rot_set_ext_func(ROT *rot, token_t token, int status)
+int HAMLIB_API rot_set_ext_func(ROT *rot, hamlib_token_t token, int status)
 {
     const struct rot_caps *caps;
 
@@ -682,7 +682,7 @@ int HAMLIB_API rot_set_ext_func(ROT *rot, token_t token, int status)
  *
  * \sa rot_set_ext_func()
  */
-int HAMLIB_API rot_get_ext_func(ROT *rot, token_t token, int *status)
+int HAMLIB_API rot_get_ext_func(ROT *rot, hamlib_token_t token, int *status)
 {
     const struct rot_caps *caps;
 
@@ -724,7 +724,7 @@ int HAMLIB_API rot_get_ext_func(ROT *rot, token_t token, int *status)
  *
  * \sa rot_get_ext_parm()
  */
-int HAMLIB_API rot_set_ext_parm(ROT *rot, token_t token, value_t val)
+int HAMLIB_API rot_set_ext_parm(ROT *rot, hamlib_token_t token, value_t val)
 {
     rig_debug(RIG_DEBUG_VERBOSE, "%s called\n", __func__);
 
@@ -762,7 +762,7 @@ int HAMLIB_API rot_set_ext_parm(ROT *rot, token_t token, value_t val)
  *
  * \sa rot_set_ext_parm()
  */
-int HAMLIB_API rot_get_ext_parm(ROT *rot, token_t token, value_t *val)
+int HAMLIB_API rot_get_ext_parm(ROT *rot, hamlib_token_t token, value_t *val)
 {
     rig_debug(RIG_DEBUG_VERBOSE, "%s called\n", __func__);
 

@@ -62,20 +62,18 @@ struct prosistel_rot_priv_caps
 static int prosistel_transaction(ROT *rot, const char *cmdstr,
                                  char *data, size_t data_len)
 {
-    struct rot_state *rs;
+    hamlib_port_t *rotp = ROTPORT(rot);
     int retval;
     int retry_read = 0;
     char replybuf[BUFSZ];
 
-    rs = &rot->state;
-
 transaction_write:
 
-    rig_flush(&rs->rotport);
+    rig_flush(rotp);
 
     if (cmdstr)
     {
-        retval = write_block(&rs->rotport, (unsigned char *) cmdstr, strlen(cmdstr));
+        retval = write_block(rotp, (unsigned char *) cmdstr, strlen(cmdstr));
 
         if (retval != RIG_OK)
         {
@@ -95,12 +93,12 @@ transaction_write:
     }
 
     // Remember to check for STXA,G,R or STXA,?,XXX,R 10 bytes
-    retval = read_string(&rs->rotport, (unsigned char *) data, 20, CR, strlen(CR),
+    retval = read_string(rotp, (unsigned char *) data, 20, CR, strlen(CR),
                          0, 1);
 
     if (retval < 0)
     {
-        if (retry_read++ < rot->state.rotport.retry)
+        if (retry_read++ < rotp->retry)
         {
             goto transaction_write;
         }
@@ -130,7 +128,7 @@ transaction_quit:
 
 static int prosistel_rot_open(ROT *rot)
 {
-    struct prosistel_rot_priv_caps *priv_caps =
+    const struct prosistel_rot_priv_caps *priv_caps =
         (struct prosistel_rot_priv_caps *) rot->caps->priv;
     char cmdstr[64];
     int retval;
@@ -173,7 +171,7 @@ static int prosistel_rot_open(ROT *rot)
 
 static int prosistel_rot_set_position(ROT *rot, azimuth_t az, elevation_t el)
 {
-    struct prosistel_rot_priv_caps *priv_caps =
+    const struct prosistel_rot_priv_caps *priv_caps =
         (struct prosistel_rot_priv_caps *) rot->caps->priv;
     char cmdstr[64];
     int retval = -RIG_EINTERNAL;
@@ -218,7 +216,7 @@ static int prosistel_rot_set_position(ROT *rot, azimuth_t az, elevation_t el)
 
 static int prosistel_rot_get_position(ROT *rot, azimuth_t *az, elevation_t *el)
 {
-    struct prosistel_rot_priv_caps *priv_caps =
+    const struct prosistel_rot_priv_caps *priv_caps =
         (struct prosistel_rot_priv_caps *) rot->caps->priv;
     char cmdstr[64];
     char data[20];
@@ -310,7 +308,7 @@ static int prosistel_rot_get_position(ROT *rot, azimuth_t *az, elevation_t *el)
 
 static int prosistel_rot_stop(ROT *rot)
 {
-    struct prosistel_rot_priv_caps *priv_caps =
+    const struct prosistel_rot_priv_caps *priv_caps =
         (struct prosistel_rot_priv_caps *) rot->caps->priv;
     char cmdstr[64];
     int retval = -RIG_EINTERNAL;

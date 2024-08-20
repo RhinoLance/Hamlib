@@ -148,7 +148,7 @@ static struct kenwood_priv_caps thd72_priv_caps =
 int thd72_open(RIG *rig)
 {
     int ret;
-    struct kenwood_priv_data *priv = rig->state.priv;
+    struct kenwood_priv_data *priv = STATE(rig)->priv;
     strcpy(priv->verify_cmd, "ID\r");
 
     //ret = kenwood_transaction(rig, "", NULL, 0);
@@ -170,12 +170,12 @@ static int thd72_set_vfo(RIG *rig, vfo_t vfo)
     case RIG_VFO_VFO:
     case RIG_VFO_MAIN:
         cmd = "BC 0";
-        rig->state.current_vfo = RIG_VFO_A;
+        STATE(rig)->current_vfo = RIG_VFO_A;
         break;
 
     case RIG_VFO_B:
     case RIG_VFO_SUB:
-        rig->state.current_vfo = RIG_VFO_B;
+        STATE(rig)->current_vfo = RIG_VFO_B;
         cmd = "BC 1";
         break;
 
@@ -192,7 +192,7 @@ static int thd72_set_ptt(RIG *rig, vfo_t vfo, ptt_t ptt)
 {
     int retval;
     char vfobuf[16];
-    struct kenwood_priv_data *priv = rig->state.priv;
+    const struct kenwood_priv_data *priv = STATE(rig)->priv;
     char vfonum = '0';
 
     rig_debug(RIG_DEBUG_TRACE, "%s: called\n", __func__);
@@ -257,7 +257,7 @@ static int thd72_get_vfo(RIG *rig, vfo_t *vfo)
 
 static int thd72_set_split_vfo(RIG *rig, vfo_t vfo, split_t split, vfo_t txvfo)
 {
-    struct kenwood_priv_data *priv = rig->state.priv;
+    struct kenwood_priv_data *priv = STATE(rig)->priv;
     char vfobuf[16];
     int retval;
 
@@ -302,7 +302,7 @@ static int thd72_set_split_vfo(RIG *rig, vfo_t vfo, split_t split, vfo_t txvfo)
 static int thd72_get_split_vfo(RIG *rig, vfo_t vfo, split_t *split,
                                vfo_t *txvfo)
 {
-    struct kenwood_priv_data *priv = rig->state.priv;
+    struct kenwood_priv_data *priv = STATE(rig)->priv;
     char buf[10];
     int retval;
 
@@ -340,7 +340,7 @@ static int thd72_get_split_vfo(RIG *rig, vfo_t vfo, split_t *split,
 static int thd72_vfoc(RIG *rig, vfo_t vfo, char *vfoc)
 {
     rig_debug(RIG_DEBUG_TRACE, "%s: called VFO=%s\n", __func__, rig_strvfo(vfo));
-    vfo = (vfo == RIG_VFO_CURR) ? rig->state.current_vfo : vfo;
+    vfo = (vfo == RIG_VFO_CURR) ? STATE(rig)->current_vfo : vfo;
 
     switch (vfo)
     {
@@ -450,7 +450,6 @@ static int thd72_set_freq(RIG *rig, vfo_t vfo, freq_t freq)
     rig_debug(RIG_DEBUG_VERBOSE, "%s: tsindex=%d, stepsize=%d\n", __func__, tsindex,
               (int)ts);
     freq = roundl(freq / ts) * ts;
-    // cppcheck-suppress *
     SNPRINTF(fbuf, sizeof(fbuf), "%010"PRIll, (int64_t)freq);
     memcpy(buf + 5, fbuf, 10);
     retval = kenwood_simple_transaction(rig, buf, 52);
@@ -1275,13 +1274,21 @@ static int thd72_set_channel(RIG *rig, vfo_t vfo, const channel_t *chan)
 static int thd72_parse_channel(int kind, const char *buf, channel_t *chan)
 {
     int tmp;
+    int n;
     char c;
     const char *data;
 
     if (kind == 0) { data = buf + 5; }
     else { data = buf + 7; }
 
-    sscanf(data, "%"SCNfreq, &chan->freq);
+    n = sscanf(data, "%"SCNfreq, &chan->freq);
+
+    if (n != 1)
+    {
+        rig_debug(RIG_DEBUG_ERR, "%s: error scanning %s\n", __func__, data);
+        return -RIG_EPROTO;
+    }
+
     c = data[46]; // mode
 
     if (c >= '0' && c <= '2')
@@ -1304,12 +1311,25 @@ static int thd72_parse_channel(int kind, const char *buf, channel_t *chan)
         chan->rptr_shift = thd72_rshf_table[c - '0'];
     }
 
-    sscanf(data + 37, "%ld", &chan->rptr_offs);
+    n = sscanf(data + 37, "%ld", &chan->rptr_offs);
+
+    if (n != 1)
+    {
+        rig_debug(RIG_DEBUG_ERR, "%s: error scanning data[37]%s\n", __func__, data);
+        return -RIG_EPROTO;
+    }
+
     c = data[17]; // Tone status
 
     if (c != '0')
     {
-        sscanf(data + 25, "%d", &tmp);
+        n = sscanf(data + 25, "%d", &tmp);
+
+        if (n != 1)
+        {
+            rig_debug(RIG_DEBUG_ERR, "%s: error scanning data[25]%s\n", __func__, data);
+            return -RIG_EPROTO;
+        }
 
         if (tmp > 0 && tmp < 42)
         {
@@ -1325,7 +1345,13 @@ static int thd72_parse_channel(int kind, const char *buf, channel_t *chan)
 
     if (c != '0')
     {
-        sscanf(data + 28, "%d", &tmp);
+        n = sscanf(data + 28, "%d", &tmp);
+
+        if (n != 1)
+        {
+            rig_debug(RIG_DEBUG_ERR, "%s: error scanning data[28]%s\n", __func__, data);
+            return -RIG_EPROTO;
+        }
 
         if (tmp > 0 && tmp < 42)
         {
@@ -1341,7 +1367,14 @@ static int thd72_parse_channel(int kind, const char *buf, channel_t *chan)
 
     if (c != '0')
     {
-        sscanf(data + 31, "%d", &tmp);
+        n = sscanf(data + 31, "%d", &tmp);
+
+        if (n != 1)
+        {
+            rig_debug(RIG_DEBUG_ERR, "%s: error scanning data[31]%s\n", __func__, data);
+            return -RIG_EPROTO;
+        }
+
         chan->dcs_code = tmp;
     }
     else
@@ -1423,7 +1456,7 @@ static int thd72_get_channel(RIG *rig, vfo_t vfo, channel_t *chan,
 
 static int thd72_get_block(RIG *rig, int block_num, char *block)
 {
-    hamlib_port_t *rp = &rig->state.rigport;
+    hamlib_port_t *rp = RIGPORT(rig);
     char cmd[CMD_SZ] = "R\0\0\0\0";
     char resp[CMD_SZ];
     int ret;
@@ -1485,9 +1518,9 @@ static int thd72_get_block(RIG *rig, int block_num, char *block)
 int thd72_get_chan_all_cb(RIG *rig, chan_cb_t chan_cb, rig_ptr_t arg)
 {
     int i, j, ret;
-    hamlib_port_t *rp = &rig->state.rigport;
+    hamlib_port_t *rp = RIGPORT(rig);
     channel_t *chan;
-    chan_t *chan_list = rig->state.chan_list;
+    chan_t *chan_list = STATE(rig)->chan_list;
     int chan_next = chan_list[0].start;
     char block[BLOCK_SZ];
     char resp[CMD_SZ];
@@ -1550,7 +1583,7 @@ int thd72_get_chan_all_cb(RIG *rig, chan_cb_t chan_cb, rig_ptr_t arg)
          */
         for (j = 0; j < CHAN_PER_BLOCK; j++)
         {
-            char *block_chan = block + j * (BLOCK_SZ / CHAN_PER_BLOCK);
+            const char *block_chan = block + j * (BLOCK_SZ / CHAN_PER_BLOCK);
             memset(chan, 0, sizeof(channel_t));
             chan->vfo = RIG_VFO_MEM;
             chan->channel_num = i * CHAN_PER_BLOCK + j;
@@ -1619,7 +1652,7 @@ int thd72_get_chan_all_cb(RIG *rig, chan_cb_t chan_cb, rig_ptr_t arg)
 /*
  * th-d72a rig capabilities.
  */
-const struct rig_caps thd72a_caps =
+struct rig_caps thd72a_caps =
 {
     RIG_MODEL(RIG_MODEL_THD72A),
     .model_name = "TH-D72A",

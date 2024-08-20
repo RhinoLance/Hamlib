@@ -46,16 +46,16 @@ int codan_transaction(RIG *rig, char *cmd, int expected, char **result)
 {
     char cmd_buf[MAXCMDLEN];
     int retval;
-    struct rig_state *rs = &rig->state;
-    struct codan_priv_data *priv = rig->state.priv;
+    hamlib_port_t *rp = RIGPORT(rig);
+    struct codan_priv_data *priv = STATE(rig)->priv;
     //int retry = 3;
 
     rig_debug(RIG_DEBUG_VERBOSE, "%s: cmd=%s\n", __func__, cmd);
 
     SNPRINTF(cmd_buf, sizeof(cmd_buf), "%s%s", cmd, EOM);
 
-    rig_flush(&rs->rigport);
-    retval = write_block(&rs->rigport, (unsigned char *) cmd_buf, strlen(cmd_buf));
+    rig_flush(rp);
+    retval = write_block(rp, (unsigned char *) cmd_buf, strlen(cmd_buf));
     hl_usleep(rig->caps->post_write_delay);
 
     if (retval < 0)
@@ -66,7 +66,7 @@ int codan_transaction(RIG *rig, char *cmd, int expected, char **result)
     if (expected == 0)
     {
         // response format is response...0x0d0x0a
-        retval = read_string(&rs->rigport, (unsigned char *) priv->ret_data,
+        retval = read_string(rp, (unsigned char *) priv->ret_data,
                              sizeof(priv->ret_data),
                              "\x0a", 1, 0, 1);
         rig_debug(RIG_DEBUG_VERBOSE, "%s: result=%s, resultlen=%d\n", __func__,
@@ -79,7 +79,7 @@ int codan_transaction(RIG *rig, char *cmd, int expected, char **result)
     }
     else
     {
-        retval = read_string(&rs->rigport, (unsigned char *) priv->ret_data,
+        retval = read_string(rp, (unsigned char *) priv->ret_data,
                              sizeof(priv->ret_data),
                              "\x0a", 1, 0, 1);
 
@@ -91,7 +91,7 @@ int codan_transaction(RIG *rig, char *cmd, int expected, char **result)
         if (strncmp(priv->ret_data, "LEVELS:", 7) == 0)
         {
             rig_debug(RIG_DEBUG_VERBOSE, "%s: %s\n", __func__, priv->ret_data);
-            retval = read_string(&rs->rigport, (unsigned char *) priv->ret_data,
+            retval = read_string(rp, (unsigned char *) priv->ret_data,
                                  sizeof(priv->ret_data),
                                  "\x0a", 1, 0, 1);
             rig_debug(RIG_DEBUG_VERBOSE, "%s: %s\n", __func__, priv->ret_data);
@@ -105,7 +105,7 @@ int codan_transaction(RIG *rig, char *cmd, int expected, char **result)
             && sscanf(priv->ret_data, "%d:%d:%d", &hr, &min, &sec) != 3)
     {
         char tmpbuf[256];
-        retval = read_string(&rs->rigport, (unsigned char *) tmpbuf,
+        retval = read_string(rp, (unsigned char *) tmpbuf,
                              sizeof(priv->ret_data),
                              "\x0a", 1, 0, 1);
 
@@ -137,10 +137,10 @@ int codan_init(RIG *rig)
     rig_debug(RIG_DEBUG_VERBOSE, "%s version %s\n", __func__,
               rig->caps->version);
     // cppcheck claims leak here but it's freed in cleanup
-    rig->state.priv = (struct codan_priv_data *)calloc(1,
+    STATE(rig)->priv = (struct codan_priv_data *)calloc(1,
                       sizeof(struct codan_priv_data));
 
-    if (!rig->state.priv)
+    if (!STATE(rig)->priv)
     {
         return -RIG_ENOMEM;
     }
@@ -151,8 +151,8 @@ int codan_init(RIG *rig)
 int codan_open(RIG *rig)
 {
     char *results = NULL;
-    codan_transaction(rig, "scan off\r", 1, &results);
-    codan_transaction(rig, "echo off", 1, &results);
+    codan_transaction(rig, "\recho off", 1, &results);
+    codan_transaction(rig, "ver", 1, &results);
     //codan_transaction(rig, "prompt time", 1, &results);
     codan_transaction(rig, "login", 1, &results);
 
@@ -184,12 +184,12 @@ int codan_cleanup(RIG *rig)
         return -RIG_EINVAL;
     }
 
-    if (rig->state.priv)
+    if (STATE(rig)->priv)
     {
-        free(rig->state.priv);
+        free(STATE(rig)->priv);
     }
 
-    rig->state.priv = NULL;
+    STATE(rig)->priv = NULL;
 
     return RIG_OK;
 }
@@ -286,7 +286,7 @@ int codan_set_mode(RIG *rig, vfo_t vfo, rmode_t mode, pbwidth_t width)
 
 /*
  * codan_set_freq
- * assumes rig!=NULL, rig->state.priv!=NULL
+ * assumes rig!=NULL, STATE(rig)->priv!=NULL
  */
 int codan_set_freq(RIG *rig, vfo_t vfo, freq_t freq)
 {
@@ -313,7 +313,7 @@ int codan_set_freq(RIG *rig, vfo_t vfo, freq_t freq)
 
 /*
  * codan_get_freq
- * Assumes rig!=NULL, rig->state.priv!=NULL, freq!=NULL
+ * Assumes rig!=NULL, STATE(rig)->priv!=NULL, freq!=NULL
  */
 int codan_get_freq(RIG *rig, vfo_t vfo, freq_t *freq)
 {
@@ -363,7 +363,7 @@ int codan_get_ptt(RIG *rig, vfo_t vfo, ptt_t *ptt)
         return retval;
     }
 
-    char *p = strstr(response, "Ptt");
+    const char *p = strstr(response, "Ptt");
 
     if (p)
     {
@@ -410,7 +410,7 @@ int codan_set_ptt(RIG *rig, vfo_t vfo, ptt_t ptt)
 
 
 
-const struct rig_caps envoy_caps =
+struct rig_caps envoy_caps =
 {
     RIG_MODEL(RIG_MODEL_CODAN_ENVOY),
     .model_name =       "Envoy",
@@ -475,7 +475,7 @@ const struct rig_caps envoy_caps =
     .hamlib_check_rig_caps = HAMLIB_CHECK_RIG_CAPS
 };
 
-const struct rig_caps ngs_caps =
+struct rig_caps ngs_caps =
 {
     RIG_MODEL(RIG_MODEL_CODAN_NGT),
     .model_name =       "NGT",

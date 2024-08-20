@@ -6,10 +6,12 @@
 // gcc -static -I../include -g -Wall -o simicom simicom.c -L../../build/src/.libs -lhamlib -lwsock32 -lws2_32
 #define _XOPEN_SOURCE 700
 // since we are POSIX here we need this
+#if 0
 struct ip_mreq
 {
     int dummy;
 };
+#endif
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -23,6 +25,7 @@ struct ip_mreq
 #include <termios.h>
 #include <unistd.h>
 
+#undef ECHO
 
 #define BUFSIZE 256
 #define X25
@@ -49,7 +52,7 @@ int ovf_status = 0;
 int powerstat = 1;
 int keyspd = 20;
 
-void dumphex(unsigned char *buf, int n)
+void dumphex(const unsigned char *buf, int n)
 {
     for (int i = 0; i < n; ++i) { printf("%02x ", buf[i]); }
 
@@ -59,7 +62,7 @@ void dumphex(unsigned char *buf, int n)
 int
 frameGet(int fd, unsigned char *buf)
 {
-    int i = 0, n;
+    int i = 0;
     memset(buf, 0, BUFSIZE);
     unsigned char c;
 
@@ -75,10 +78,10 @@ again:
             char mytime[256];
             date_strget(mytime, sizeof(mytime), 1);
             printf("%s:", mytime); dumphex(buf, i);
+#ifdef ECHO
             // echo
             n = write(fd, buf, i);
-
-            if (n != i) { printf("%s: error on write: %s\n", __func__, strerror(errno)); }
+#endif
 
             return i;
         }
@@ -99,7 +102,7 @@ again:
         }
     }
 
-    printf("Error??? c=x%02x\n", c);
+    printf("Error %s\n", strerror(errno));
 
     return 0;
 }
@@ -108,6 +111,12 @@ void frameParse(int fd, unsigned char *frame, int len)
 {
     double freq;
     int n = 0;
+
+    if (len == 0)
+    {
+        printf("%s: len==0\n", __func__);
+        return;
+    }
 
     dumphex(frame, len);
 
@@ -138,6 +147,13 @@ void frameParse(int fd, unsigned char *frame, int len)
 
         if (powerstat)
         {
+            unsigned char frame2[11];
+            memcpy(frame2,frame,11);
+            frame2[2] = 0xe1;
+            frame2[3] = 0x88;
+            dump_hex(frame2,11);
+            n = write(fd, frame2, 11);
+            dump_hex(frame,11);
             n = write(fd, frame, 11);
         }
 
@@ -215,8 +231,9 @@ void frameParse(int fd, unsigned char *frame, int len)
         if (frame[5] == 0xfd)
         {
             printf("get split %d\n", 1);
-            frame[7] = 0xfd;
-            n = write(fd, frame, 8);
+            frame[5] = split;
+            frame[6] = 0xfd;
+            n = write(fd, frame, 7);
         }
         else
         {
@@ -284,6 +301,7 @@ void frameParse(int fd, unsigned char *frame, int len)
             frame[8] = 0xfd;
             n = write(fd, frame, 9);
             break;
+
         case 0x0c:
             dumphex(frame, 10);
             printf("subcmd=0x0c #1\n");

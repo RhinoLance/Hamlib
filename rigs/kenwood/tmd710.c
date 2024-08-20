@@ -87,9 +87,9 @@ static int tmd710_get_func(RIG *rig, vfo_t vfo, setting_t func, int *status);
 static int tmd710_set_func(RIG *rig, vfo_t vfo, setting_t func, int status);
 static int tmd710_get_parm(RIG *rig, setting_t parm, value_t *val);
 static int tmd710_set_parm(RIG *rig, setting_t parm, value_t val);
-static int tmd710_get_ext_level(RIG *rig, vfo_t vfo, token_t token,
+static int tmd710_get_ext_level(RIG *rig, vfo_t vfo, hamlib_token_t token,
                                 value_t *val);
-static int tmd710_set_ext_level(RIG *rig, vfo_t vfo, token_t token,
+static int tmd710_set_ext_level(RIG *rig, vfo_t vfo, hamlib_token_t token,
                                 value_t val);
 
 #define TMD710_MODES     (RIG_MODE_FM|RIG_MODE_FMN|RIG_MODE_AM)
@@ -250,9 +250,9 @@ const struct confparams tmd710_ext_levels[] =
     { RIG_CONF_END, NULL, }
 };
 
-const struct rig_caps tmd710_caps =
+struct rig_caps tmd710_caps =
 {
-    .rig_model =  RIG_MODEL_TMD710,
+    RIG_MODEL(RIG_MODEL_TMD710),
     .model_name = "TM-D710(G)",
     .mfg_name =  "Kenwood",
     .version =  BACKEND_VER ".6",
@@ -408,7 +408,7 @@ const struct rig_caps tmd710_caps =
     .decode_event =  th_decode_event,
 };
 
-const struct rig_caps tmv71_caps =
+struct rig_caps tmv71_caps =
 {
     RIG_MODEL(RIG_MODEL_TMV71),
     .model_name = "TM-V71(A)",
@@ -659,14 +659,14 @@ static int tmd710_open(RIG *rig)
 
     rig_debug(RIG_DEBUG_TRACE, "%s: called\n", __func__);
 
-    rig->state.tx_vfo = RIG_VFO_A;
+    STATE(rig)->tx_vfo = RIG_VFO_A;
 
     // Get current RX and TX VFO state, do not care if we succeed or not
     tmd710_get_vfo(rig, &vfo);
     tmd710_get_split_vfo(rig, RIG_VFO_CURR, &split, &vfo);
 
-    rig_debug(RIG_DEBUG_TRACE, "rig->state.tx_vfo: %s\n",
-              rig_strvfo(rig->state.tx_vfo));
+    rig_debug(RIG_DEBUG_TRACE, "STATE(rig)->tx_vfo: %s\n",
+              rig_strvfo(STATE(rig)->tx_vfo));
 
     return 0;
 }
@@ -815,10 +815,10 @@ static int tmd710_scan_me(char *buf, tmd710_me *me_struct)
 
     retval = num_sscanf(buf,
                         "ME %x,%"SCNfreq",%x,%x,%x,%x,%x,%x,%d,%d,%d,%d,%d,%"SCNfreq",%d,%d",
-                        &me_struct->channel, &me_struct->freq,
-                        &me_struct->step, &me_struct->shift,
-                        &me_struct->reverse, &me_struct->tone,
-                        &me_struct->ct, &me_struct->dcs,
+                        (unsigned int *)&me_struct->channel, &me_struct->freq,
+                        (unsigned int *)&me_struct->step, (unsigned int *)&me_struct->shift,
+                        (unsigned int *)&me_struct->reverse, (unsigned int *)&me_struct->tone,
+                        (unsigned int *)&me_struct->ct, (unsigned int *)&me_struct->dcs,
                         &me_struct->tone_freq, &me_struct->ct_freq,
                         &me_struct->dcs_val, &me_struct->offset,
                         &me_struct->mode, &me_struct->tx_freq,
@@ -865,7 +865,7 @@ int tmd710_pull_me(RIG *rig, int ch, tmd710_me *me_struct)
     return RIG_OK;
 }
 
-int tmd710_push_me(RIG *rig, tmd710_me *me_struct)
+int tmd710_push_me(RIG *rig, const tmd710_me *me_struct)
 {
     char cmdbuf[80];
     char buf[80];
@@ -902,7 +902,7 @@ int tmd710_get_memory_name(RIG *rig, int ch, char *name)
         return retval;
     }
 
-    retval = num_sscanf(buf, "MN %d,%s", &ch, name);
+    retval = num_sscanf(buf, "MN %d,%30s", &ch, name);
 
     if (retval != 2)
     {
@@ -963,10 +963,10 @@ int tmd710_pull_fo(RIG *rig, vfo_t vfo, tmd710_fo *fo_struct)
     }
 
     retval = num_sscanf(buf, "FO %x,%"SCNfreq",%x,%x,%x,%x,%x,%x,%d,%d,%d,%d,%d",
-                        &fo_struct->vfo, &fo_struct->freq,
-                        &fo_struct->step, &fo_struct->shift,
-                        &fo_struct->reverse, &fo_struct->tone,
-                        &fo_struct->ct, &fo_struct->dcs,
+                        (unsigned int *)&fo_struct->vfo, &fo_struct->freq,
+                        (unsigned int *)&fo_struct->step, (unsigned int *)&fo_struct->shift,
+                        (unsigned int *)&fo_struct->reverse, (unsigned int *)&fo_struct->tone,
+                        (unsigned int *)&fo_struct->ct, (unsigned int *)&fo_struct->dcs,
                         &fo_struct->tone_freq, &fo_struct->ct_freq,
                         &fo_struct->dcs_val, &fo_struct->offset,
                         &fo_struct->mode);
@@ -1006,10 +1006,10 @@ int tmd710_push_fo(RIG *rig, vfo_t vfo, tmd710_fo *fo_struct)
     }
 
     retval = num_sscanf(buf, "FO %x,%"SCNfreq",%x,%x,%x,%x,%x,%x,%d,%d,%d,%d,%d",
-                        &fo_struct->vfo, &fo_struct->freq,
-                        &fo_struct->step, &fo_struct->shift,
-                        &fo_struct->reverse, &fo_struct->tone,
-                        &fo_struct->ct, &fo_struct->dcs,
+                        (unsigned int *)&fo_struct->vfo, &fo_struct->freq,
+                        (unsigned int *)&fo_struct->step, (unsigned int *)&fo_struct->shift,
+                        (unsigned int *)&fo_struct->reverse, (unsigned int *)&fo_struct->tone,
+                        (unsigned int *)&fo_struct->ct, (unsigned int *)&fo_struct->dcs,
                         &fo_struct->tone_freq, &fo_struct->ct_freq,
                         &fo_struct->dcs_val, &fo_struct->offset,
                         &fo_struct->mode);
@@ -1061,12 +1061,12 @@ int tmd710_scan_mu(char *buf, tmd710_mu *mu_struct)
                         &mu_struct->brightness_level,
                         &mu_struct->auto_brightness,
                         &mu_struct->backlight_color,
-                        &mu_struct->pf1_key,
-                        &mu_struct->pf2_key,
-                        &mu_struct->mic_pf1_key,
-                        &mu_struct->mic_pf2_key,
-                        &mu_struct->mic_pf3_key,
-                        &mu_struct->mic_pf4_key,
+                        (unsigned int *)&mu_struct->pf1_key,
+                        (unsigned int *)&mu_struct->pf2_key,
+                        (unsigned int *)&mu_struct->mic_pf1_key,
+                        (unsigned int *)&mu_struct->mic_pf2_key,
+                        (unsigned int *)&mu_struct->mic_pf3_key,
+                        (unsigned int *)&mu_struct->mic_pf4_key,
                         &mu_struct->mic_key_lock,
                         &mu_struct->scan_resume,
                         &mu_struct->auto_power_off,
@@ -1240,7 +1240,7 @@ int tmd710_do_get_freq(RIG *rig, vfo_t vfo, freq_t *freq)
     tmd710_fo fo_struct;
     int retval;
 
-    rig_debug(RIG_DEBUG_TRACE, "%s: called for vfo: %s(%d)\n", __func__,
+    rig_debug(RIG_DEBUG_TRACE, "%s: called for vfo: %s(%u)\n", __func__,
               rig_strvfo(vfo), vfo);
 
     retval = tmd710_pull_fo(rig, vfo, &fo_struct);
@@ -1260,7 +1260,7 @@ int tmd710_do_get_freq(RIG *rig, vfo_t vfo, freq_t *freq)
 int tmd710_set_freq(RIG *rig, vfo_t vfo, freq_t freq)
 {
 
-    rig_debug(RIG_DEBUG_TRACE, "%s: called for vfo: %s(%d)\n", __func__,
+    rig_debug(RIG_DEBUG_TRACE, "%s: called for vfo: %s(%u)\n", __func__,
               rig_strvfo(vfo), vfo);
 
     return tmd710_do_set_freq(rig, vfo, freq);
@@ -1288,7 +1288,7 @@ int tmd710_set_split_freq(RIG *rig, vfo_t vfo, freq_t freq)
     rig_debug(RIG_DEBUG_TRACE, "%s: called\n", __func__);
 
     // Use the TX VFO for split
-    return tmd710_do_set_freq(rig, rig->state.tx_vfo, freq);
+    return tmd710_do_set_freq(rig, STATE(rig)->tx_vfo, freq);
 }
 
 /*
@@ -1301,7 +1301,7 @@ int tmd710_get_split_freq(RIG *rig, vfo_t vfo, freq_t *freq)
     rig_debug(RIG_DEBUG_TRACE, "%s: called\n", __func__);
 
     // Use the TX VFO for split
-    return tmd710_do_get_freq(rig, rig->state.tx_vfo, freq);
+    return tmd710_do_get_freq(rig, STATE(rig)->tx_vfo, freq);
 }
 
 static int tmd710_find_ctcss_index(RIG *rig, tone_t tone, int *ctcss_index)
@@ -1319,7 +1319,7 @@ static int tmd710_find_ctcss_index(RIG *rig, tone_t tone, int *ctcss_index)
 
     if (stepind == -1)
     {
-        rig_debug(RIG_DEBUG_ERR, "%s: Unsupported tone value '%d'\n", __func__, tone);
+        rig_debug(RIG_DEBUG_ERR, "%s: Unsupported tone value '%u'\n", __func__, tone);
         return -RIG_EINVAL;
     }
 
@@ -1367,7 +1367,7 @@ int tmd710_get_ctcss_tone(RIG *rig, vfo_t vfo, tone_t *tone)
     tmd710_fo fo_struct;
     int retval;
 
-    const struct rig_caps *caps;
+    struct rig_caps *caps;
     caps = rig->caps;
 
     rig_debug(RIG_DEBUG_TRACE, "%s: called\n", __func__);
@@ -1421,7 +1421,7 @@ int tmd710_get_ctcss_sql(RIG *rig, vfo_t vfo, tone_t *tone)
     tmd710_fo fo_struct;
     int retval;
 
-    const struct rig_caps *caps;
+    struct rig_caps *caps;
     caps = rig->caps;
 
     rig_debug(RIG_DEBUG_TRACE, "%s: called\n", __func__);
@@ -1458,7 +1458,7 @@ int tmd710_get_dcs_sql(RIG *rig, vfo_t vfo, tone_t *code)
 
     if (fo_struct.dcs)
     {
-        tone_t *dcs_list = common_dcs_list;
+        const tone_t *dcs_list = common_dcs_list;
         *code = dcs_list[fo_struct.dcs_val];
     }
     else
@@ -1474,7 +1474,7 @@ static int tmd710_find_dcs_index(tone_t code, int *dcs_index)
     int i = 0;
 
     // we only allow exact matches here
-    tone_t *dcs_list = common_dcs_list;
+    const tone_t *dcs_list = common_dcs_list;
 
     while (code != dcs_list[i])
     {
@@ -1645,7 +1645,7 @@ static int tmd710_find_tuning_step_index(RIG *rig, shortfreq_t ts,
 {
     int k, stepind = -1;
 
-    for (k = 0; rig->state.tuning_steps[k].ts != 0; ++k)
+    for (k = 0; STATE(rig)->tuning_steps[k].ts != 0; ++k)
     {
 
         if ((rig->caps->tuning_steps[k].modes == RIG_MODE_NONE)
@@ -1965,7 +1965,7 @@ int tmd710_set_vfo(RIG *rig, vfo_t vfo)
         break;
 
     default:
-        rig_debug(RIG_DEBUG_ERR, "%s: Unsupported VFO %d\n", __func__, vfo);
+        rig_debug(RIG_DEBUG_ERR, "%s: Unsupported VFO %u\n", __func__, vfo);
         return -RIG_EVFO;
     }
 
@@ -2030,7 +2030,7 @@ int tmd710_set_split_vfo(RIG *rig, vfo_t vfo, split_t split, vfo_t txvfo)
         return retval;
     }
 
-    rig->state.tx_vfo = txvfo;
+    STATE(rig)->tx_vfo = txvfo;
 
     return RIG_OK;
 }
@@ -2062,10 +2062,10 @@ int tmd710_get_split_vfo(RIG *rig, vfo_t vfo, split_t *split, vfo_t *txvfo)
         return -RIG_EPROTO;
     }
 
-    rig->state.tx_vfo = *txvfo;
+    STATE(rig)->tx_vfo = *txvfo;
 
     // Rig is always in "split mode" and VFOs are targetable, so simply check current and TX VFOs
-    *split = rig->state.current_vfo == rig->state.tx_vfo ? RIG_SPLIT_OFF :
+    *split = STATE(rig)->current_vfo == STATE(rig)->tx_vfo ? RIG_SPLIT_OFF :
              RIG_SPLIT_ON;
 
     return RIG_OK;
@@ -2097,7 +2097,7 @@ int tmd710_get_mem(RIG *rig, vfo_t vfo, int *ch)
     }
     else
     {
-        vfonum = rig->state.current_vfo == RIG_VFO_A ? 0 : 1;
+        vfonum = STATE(rig)->current_vfo == RIG_VFO_A ? 0 : 1;
     }
 
     snprintf(cmd, sizeof(cmd), "MR %d", vfonum);
@@ -2121,7 +2121,7 @@ int tmd710_get_mem(RIG *rig, vfo_t vfo, int *ch)
 
 int tmd710_set_mem(RIG *rig, vfo_t vfo, int ch)
 {
-    int retval, vfonum;
+    int vfonum;
     char cmd[16];
     char membuf[16];
 
@@ -2134,7 +2134,7 @@ int tmd710_set_mem(RIG *rig, vfo_t vfo, int ch)
 
     if (RIG_VFO_CURR == vfo || RIG_VFO_VFO == vfo)
     {
-        retval = tmd710_get_vfo_num(rig, &vfonum, NULL);
+        int retval = tmd710_get_vfo_num(rig, &vfonum, NULL);
 
         if (retval != RIG_OK)
         {
@@ -2143,7 +2143,7 @@ int tmd710_set_mem(RIG *rig, vfo_t vfo, int ch)
     }
     else
     {
-        vfonum = rig->state.current_vfo == RIG_VFO_A ? 0 : 1;
+        vfonum = STATE(rig)->current_vfo == RIG_VFO_A ? 0 : 1;
     }
 
     snprintf(cmd, sizeof(cmd), "MR %d,%03d", vfonum, ch);
@@ -2206,7 +2206,7 @@ int tmd710_get_channel(RIG *rig, vfo_t vfo, channel_t *chan, int read_only)
 
     if (me_struct.dcs)
     {
-        tone_t *dcs_list = common_dcs_list;
+        const tone_t *dcs_list = common_dcs_list;
         chan->dcs_sql = dcs_list[me_struct.dcs_val];
     }
     else
@@ -2491,7 +2491,7 @@ int tmd710_get_level(RIG *rig, vfo_t vfo, setting_t level, value_t *val)
             return retval;
         }
 
-        retval = sscanf(ackbuf, "SQ %X", &l);
+        retval = sscanf(ackbuf, "SQ %X", (unsigned int *)&l);
 
         if (retval != 1 || l < TMD710_SQL_MIN || l > TMD710_SQL_MAX)
         {
@@ -2904,10 +2904,10 @@ int tmd710_set_parm(RIG *rig, setting_t parm, value_t val)
 
 /*
  * tmd710_get_ext_level
- * Assumes rig!=NULL, rig->state.priv!=NULL, val!=NULL
+ * Assumes rig!=NULL, STATE(rig)->priv!=NULL, val!=NULL
  *
  */
-int tmd710_get_ext_level(RIG *rig, vfo_t vfo, token_t token, value_t *val)
+int tmd710_get_ext_level(RIG *rig, vfo_t vfo, hamlib_token_t token, value_t *val)
 {
     int retval;
     tmd710_mu mu_struct;
@@ -2938,10 +2938,10 @@ int tmd710_get_ext_level(RIG *rig, vfo_t vfo, token_t token, value_t *val)
 
 /*
  * tmd710_set_ext_level
- * Assumes rig!=NULL, rig->state.priv!=NULL
+ * Assumes rig!=NULL, STATE(rig)->priv!=NULL
  *
  */
-int tmd710_set_ext_level(RIG *rig, vfo_t vfo, token_t token, value_t val)
+int tmd710_set_ext_level(RIG *rig, vfo_t vfo, hamlib_token_t token, value_t val)
 {
     int retval;
     tmd710_mu mu_struct;

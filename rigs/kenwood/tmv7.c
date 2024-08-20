@@ -89,7 +89,7 @@ static int tmv7_set_channel(RIG *rig, vfo_t vfo, const channel_t *chan);
 /*
  * tm-v7 rig capabilities.
  */
-const struct rig_caps tmv7_caps =
+struct rig_caps tmv7_caps =
 {
     RIG_MODEL(RIG_MODEL_TMV7),
     .model_name = "TM-V7",
@@ -567,7 +567,7 @@ int tmv7_get_channel(RIG *rig, vfo_t vfo, channel_t *chan, int read_only)
 
     chan->freq = freq;
     chan->vfo = RIG_VFO_MEM;
-    chan->tuning_step = rig->state.tuning_steps[step].ts;
+    chan->tuning_step = STATE(rig)->tuning_steps[step].ts;
 
     if (freq < MHz(138))
     {
@@ -672,8 +672,8 @@ int tmv7_set_channel(RIG *rig, vfo_t vfo, const channel_t *chan)
 
     freq = (long)chan->freq;
 
-    for (step = 0; rig->state.tuning_steps[step].ts != 0; step++)
-        if (chan->tuning_step == rig->state.tuning_steps[step].ts) { break; }
+    for (step = 0; STATE(rig)->tuning_steps[step].ts != 0; step++)
+      if (chan->tuning_step == STATE(rig)->tuning_steps[step].ts) { break; }
 
     switch (chan->rptr_shift)
     {
@@ -798,7 +798,6 @@ int tmv7_set_channel(RIG *rig, vfo_t vfo, const channel_t *chan)
     if (chan->tx_freq != RIG_FREQ_NONE)
     {
         req[5] = '1';
-        // cppcheck-suppress *
         SNPRINTF(membuf, sizeof(membuf), "%s,%011"PRIll",%01d", req,
                  (int64_t)chan->tx_freq, step);
         retval = kenwood_transaction(rig, membuf, NULL, 0);

@@ -143,6 +143,13 @@ static const struct icom_priv_caps ic7700_priv_caps =
         { .level = RIG_AGC_LAST, .icom_level = -1 },
     },
     .extcmds = ic7700_extcmds,
+    .x25x26_always = 0,
+    .x25x26_possibly = 1,
+    .x1cx03_always = 0,
+    .x1cx03_possibly = 1,
+    .x1ax03_supported = 1,
+    .mode_with_filter = 1,
+    .data_mode_supported = 1
 };
 
 // if hour < 0 then only date will be set
@@ -223,10 +230,12 @@ int ic7700_get_clock(RIG *rig, int *year, int *month, int *day, int *hour,
         prmbuf[0] = 0x00;
         prmbuf[1] = 0x59;
         retval = icom_transaction(rig, cmd, subcmd, prmbuf, 2, respbuf, &resplen);
+
         if (retval != RIG_OK)
         {
             return retval;
         }
+
         *hour = from_bcd(&respbuf[4], 2);
         *min = from_bcd(&respbuf[5], 2);
         *sec = 0;
@@ -235,10 +244,12 @@ int ic7700_get_clock(RIG *rig, int *year, int *month, int *day, int *hour,
         prmbuf[0] = 0x00;
         prmbuf[1] = 0x61;
         retval = icom_transaction(rig, cmd, subcmd, prmbuf, 2, respbuf, &resplen);
+
         if (retval != RIG_OK)
         {
             return retval;
         }
+
         *utc_offset = from_bcd(&respbuf[4], 2) * 100;
         *utc_offset += from_bcd(&respbuf[5], 2);
 
@@ -253,12 +264,20 @@ int ic7700_get_clock(RIG *rig, int *year, int *month, int *day, int *hour,
     return retval;
 }
 
-const struct rig_caps ic7700_caps =
+static int ic7700_rig_open(RIG *rig)
+{
+    rig_debug(RIG_DEBUG_VERBOSE, "%s: enter\n", __func__);
+    struct icom_priv_data *priv = (struct icom_priv_data *) STATE(rig)->priv;
+    priv->x26cmdfails = priv->x25cmdfails = 1;
+    return icom_rig_open(rig);
+}
+
+struct rig_caps ic7700_caps =
 {
     RIG_MODEL(RIG_MODEL_IC7700),
     .model_name = "IC-7700",
     .mfg_name =  "Icom",
-    .version =  BACKEND_VER ".4",
+    .version =  BACKEND_VER ".5",
     .copyright =  "LGPL",
     .status =  RIG_STATUS_STABLE,
     .rig_type =  RIG_TYPE_TRANSCEIVER,
@@ -284,9 +303,6 @@ const struct rig_caps ic7700_caps =
     .level_gran =
     {
 #include "level_gran_icom.h"
-        // cppcheck-suppress *
-        [LVL_RAWSTR] = { .min = { .i = 0 }, .max = { .i = 255 } },
-        [LVL_VOXDELAY] = { .min = { .i = 0 }, .max = { .i = 20 }, .step = { .i = 1 } },
         [LVL_KEYSPD] = { .min = { .i = 6 }, .max = { .i = 48 }, .step = { .i = 1 } },
         [LVL_CWPITCH] = { .min = { .i = 300 }, .max = { .i = 900 }, .step = { .i = 1 } },
     },
@@ -307,7 +323,7 @@ const struct rig_caps ic7700_caps =
     .agc_level_count = 4,
     .agc_levels = { RIG_AGC_OFF, RIG_AGC_FAST, RIG_AGC_MEDIUM, RIG_AGC_SLOW },
     // 7700 can have a different mode on VFOB but requires VFO swap
-    .targetable_vfo =  RIG_TARGETABLE_MODE,
+    .targetable_vfo = RIG_TARGETABLE_FREQ | RIG_TARGETABLE_MODE,
     .vfo_ops =  IC7700_VFO_OPS,
     .scan_ops =  IC7700_SCAN_OPS,
     .transceive =  RIG_TRN_RIG,
@@ -317,6 +333,7 @@ const struct rig_caps ic7700_caps =
     .chan_list =  {
         {   1,  99, RIG_MTYPE_MEM  },
         { 100, 101, RIG_MTYPE_EDGE },    /* two by two */
+        {   1,	4, RIG_MTYPE_MORSE },
         RIG_CHAN_END,
     },
 
@@ -392,13 +409,13 @@ const struct rig_caps ic7700_caps =
     .priv = (void *)& ic7700_priv_caps,
     .rig_init =   icom_init,
     .rig_cleanup =   icom_cleanup,
-    .rig_open =  icom_rig_open,
+    .rig_open =  ic7700_rig_open,
     .rig_close =  icom_rig_close,
 
     .set_freq =  icom_set_freq,
     .get_freq =  icom_get_freq,
-    .set_mode =  icom_set_mode_with_data,
-    .get_mode =  icom_get_mode_with_data,
+    .set_mode =  icom_set_mode,
+    .get_mode =  icom_get_mode,
     .set_vfo =  icom_set_vfo,
 //    .get_vfo =  icom_get_vfo,
     .set_ant =  icom_set_ant,

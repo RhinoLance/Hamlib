@@ -65,15 +65,18 @@ const struct confparams ftdx101mp_ext_levels[] =
 
 int ftdx101mp_ext_tokens[] =
 {
+    TOK_ROOFING_FILTER, TOK_KEYER, TOK_APF_FREQ, TOK_APF_WIDTH,
+    TOK_CONTOUR, TOK_CONTOUR_FREQ, TOK_CONTOUR_LEVEL, TOK_CONTOUR_WIDTH,
+    TOK_MAXPOWER_HF, TOK_MAXPOWER_6M, TOK_MAXPOWER_4M, TOK_MAXPOWER_AM,
     TOK_ROOFING_FILTER, TOK_BACKEND_NONE
 };
 
-const struct rig_caps ftdx101mp_caps =
+struct rig_caps ftdx101mp_caps =
 {
     RIG_MODEL(RIG_MODEL_FTDX101MP),
     .model_name =         "FTDX-101MP",
     .mfg_name =           "Yaesu",
-    .version =            NEWCAT_VER ".10",
+    .version =            NEWCAT_VER ".12",
     .copyright =          "LGPL",
     .status =             RIG_STATUS_STABLE,
     .rig_type =           RIG_TYPE_TRANSCEIVER,
@@ -98,14 +101,16 @@ const struct rig_caps ftdx101mp_caps =
     .has_set_parm =       RIG_PARM_BANDSELECT,
     .level_gran = {
 #include "level_gran_yaesu.h"
-        [LVL_MICGAIN] = { .min = { .f = 0 }, .max = { .f = 1.0 }, .step = { .f = 1.0f/100.0f } },
-        [LVL_SQL] = { .min = { .f = 0 }, .max = { .f = 1.0 }, .step = { .f = 1.0f/100.0f } },
-        [LVL_MONITOR_GAIN] = { .min = { .f = 0 }, .max = { .f = 1.0 }, .step = { .f = 1.0f/100.0f } },
-        [LVL_RFPOWER] = { .min = { .f = .05 }, .max = { .f = 1.0 }, .step = { .f = 1.0f/100.0f } },
+        [LVL_MICGAIN] = { .min = { .f = 0 }, .max = { .f = 1.0 }, .step = { .f = 1.0f / 100.0f } },
+        [LVL_SQL] = { .min = { .f = 0 }, .max = { .f = 1.0 }, .step = { .f = 1.0f / 100.0f } },
+        [LVL_MONITOR_GAIN] = { .min = { .f = 0 }, .max = { .f = 1.0 }, .step = { .f = 1.0f / 100.0f } },
+        [LVL_RFPOWER] = { .min = { .f = .025 }, .max = { .f = 1.0 }, .step = { .f = 1.0f / 200.0f } },
+        [LVL_USB_AF] = { .min = { .f = .0 }, .max = { .f = 1.0 }, .step = { .f = 1.0f / 100.0f } },
+        [LVL_USB_AF_INPUT] = { .min = { .f = .0 }, .max = { .f = 1.0 }, .step = { .f = 1.0f / 100.0f } },
     },
     .parm_gran =  {
         [PARM_BANDSELECT] = {.min = {.f = 0.0f}, .max = {.f = 1.0f}, .step = {.s = "BAND160M,BAND80M,BANDUNUSED,BAND40M,BAND30M,BAND20M,BAND17M,BAND15M,BAND12M,BAND10M,BAND6M,BANDGEN,BANDMW,BANDUNUSED,BANDUNUSED,BANDUNUSED,BANDUNUSED,BAND4M"}}
-        },
+    },
 
     .ctcss_list =         common_ctcss_list,
     .dcs_list =           NULL,
@@ -126,6 +131,9 @@ const struct rig_caps ftdx101mp_caps =
     .swr_cal =            FTDX101D_SWR_CAL,
     .chan_list =          {
         {   1,  99, RIG_MTYPE_MEM,  NEWCAT_MEM_CAP },
+        {   100,  117, RIG_MTYPE_MEM,  NEWCAT_MEM_CAP }, // P1L-P9U PMS channels
+        {   501,  510, RIG_MTYPE_MEM,  NEWCAT_MEM_CAP }, // 5xx 5MHz band
+        {   1,	  5,   RIG_MTYPE_MORSE },
         RIG_CHAN_END,
     },
 

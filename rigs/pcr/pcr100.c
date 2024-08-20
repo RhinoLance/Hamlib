@@ -53,7 +53,7 @@ static const struct pcr_priv_caps pcr100_priv =
 /*
  * IC PCR100 rigs capabilities.
  */
-const struct rig_caps pcr100_caps =
+struct rig_caps pcr100_caps =
 {
     RIG_MODEL(RIG_MODEL_PCR100),
     .model_name     = "IC-PCR100",
@@ -87,7 +87,6 @@ const struct rig_caps pcr100_caps =
     .has_set_parm       = RIG_PARM_NONE,
 
     .level_gran = {
-        // cppcheck-suppress *
         [LVL_RAWSTR] = { .min = { .i = 0 }, .max = { .i = 255 } },
         /* XXX check this */
         [LVL_IF] = { .min = { .i = -1270 }, .max = { .i = 1270 }, .step = { .i = 10 } },

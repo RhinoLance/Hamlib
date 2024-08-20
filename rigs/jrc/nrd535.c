@@ -89,7 +89,7 @@ static const struct jrc_priv_caps nrd535_priv_caps =
  * NRD-535 rig capabilities.
  *
  */
-const struct rig_caps nrd535_caps =
+struct rig_caps nrd535_caps =
 {
     RIG_MODEL(RIG_MODEL_NRD535),
     .model_name = "NRD-535D",
@@ -119,7 +119,6 @@ const struct rig_caps nrd535_caps =
     .has_get_parm =  RIG_PARM_TIME,
     .has_set_parm =  RIG_PARM_SET(NRD535_PARM),
     .level_gran = {
-        // cppcheck-suppress *
         [LVL_RAWSTR] = { .min = { .i = 0 }, .max = { .i = 255 } },
         [LVL_ATT] = { .min = { .i = 0 }, .max = { .i = 20 } },
         [LVL_IF] = { .min = { .i = -2000 }, .max = { .i = 2000 } },

@@ -61,7 +61,7 @@ static struct icom_priv_caps os535_priv_caps =
     .settle_time = 12,
 };
 
-const struct rig_caps os535_caps =
+struct rig_caps os535_caps =
 {
     RIG_MODEL(RIG_MODEL_OS535),
     .model_name = "OptoScan535",
@@ -90,7 +90,6 @@ const struct rig_caps os535_caps =
     .has_get_parm =  RIG_PARM_NONE,
     .has_set_parm =  RIG_PARM_NONE,
     .level_gran = {
-        // cppcheck-suppress *
         [LVL_RAWSTR] = { .min = { .i = 0 }, .max = { .i = 255 } },
     },
     .parm_gran =  {},

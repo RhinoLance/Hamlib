@@ -25,7 +25,7 @@ int myfreq_event(RIG *rig, vfo_t vfo, freq_t freq, rig_ptr_t arg)
 }
 
 
-int main(int argc, char *argv[])
+int main(int argc, const  char *argv[])
 {
     RIG *my_rig;        /* handle to rig (nstance) */
     int retcode;        /* generic return code from functions */
@@ -52,7 +52,7 @@ int main(int argc, char *argv[])
         exit(1);    /* whoops! something went wrong (mem alloc?) */
     }
 
-    strncpy(my_rig->state.rigport.pathname, SERIAL_PORT, HAMLIB_FILPATHLEN - 1);
+    rig_set_conf(my_rig, rig_token_lookup(my_rig, "rig_pathname"), SERIAL_PORT);
 
     if (rig_open(my_rig))
     {

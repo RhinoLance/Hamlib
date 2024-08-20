@@ -43,13 +43,30 @@ m4_ifdef([AM_SILENT_RULES], [AM_SILENT_RULES([yes])])
 ## ------------------------------ ##
 ## Hamlib specific configuration. ##
 ## ------------------------------ ##
+AC_ARG_ENABLE([shared],
+              [AS_HELP_STRING([--enable-shared],
+                              [Enable shared libraries @<:@default=yes@:>@])],
+              [enable_shared=$enableval],
+              [enable_shared=yes])
+AC_ARG_ENABLE([static],
+              [AS_HELP_STRING([--enable-static],
+                              [Enable static libraries @<:@default=check@:>@])],
+              [enable_static=$enableval],
+              [enable_static=check])
+
+AS_IF([test "x$enable_static" = "xyes"], [
+    enable_shared=no
+])
+AS_IF([test "x$enable_static" = "xyes" && test "x$enable_shared" = "xyes"], [
+    AC_MSG_ERROR([Both --enable-static and --enable-shared cannot be enabled at the same time.])
+])
 
 dnl New backends must be listed here!  Also the new Makefile path must be
 dnl added to AC_CONFIG_FILES near the end of this file.  See README.developer
 dnl Beware of duplication should a backend directory include both rig and
 dnl rotor definitions, e.g. "dummy".  Optional backends will not be listed
 dnl here but will be added later, e.g. "winradio".
-RIG_BACKEND_LIST="rigs/adat rigs/alinco rigs/aor rigs/barrett rigs/codan rigs/dorji rigs/drake rigs/dummy rigs/elad rigs/flexradio rigs/icom rigs/icmarine rigs/jrc rigs/kachina rigs/kenwood rigs/kit rigs/lowe rigs/pcr rigs/prm80 rigs/racal rigs/rft rigs/rs rigs/skanti rigs/tapr rigs/tentec rigs/tuner rigs/uniden rigs/winradio rigs/wj rigs/yaesu rigs/gomspace rigs/mds rigs/anytone"
+RIG_BACKEND_LIST="rigs/adat rigs/alinco rigs/aor rigs/barrett rigs/codan rigs/dorji rigs/drake rigs/dummy rigs/elad rigs/flexradio rigs/icom rigs/icmarine rigs/jrc rigs/kachina rigs/kenwood rigs/kit rigs/lowe rigs/pcr rigs/prm80 rigs/racal rigs/rft rigs/rs rigs/skanti rigs/tapr rigs/tentec rigs/tuner rigs/uniden rigs/winradio rigs/wj rigs/yaesu rigs/gomspace rigs/mds rigs/anytone rigs/motorola rigs/commradio"
 ROT_BACKEND_LIST="rotators/amsat rotators/apex rotators/ars rotators/celestron rotators/cnctrk rotators/grbltrk rotators/easycomm rotators/ether6 rotators/flir rotators/fodtrack rotators/gs232a rotators/heathkit rotators/m2 rotators/meade rotators/rotorez rotators/sartek rotators/saebrtrack rotators/spid rotators/ts7400 rotators/prosistel rotators/ioptron rotators/satel rotators/radant"
 # Amplifiers are all in the amplifiers directory
 AMP_BACKEND_LIST="amplifiers/elecraft amplifiers/gemini amplifiers/expert"
@@ -77,7 +94,7 @@ AC_SUBST([ABI_AGE])
 AM_CPPFLAGS="${AM_CPPFLAGS} -DIN_HAMLIB"
 
 # Add Hamlib header include paths
-AM_CPPFLAGS="${AM_CPPFLAGS} -I\$(top_srcdir)/include -I\$(top_srcdir)/src -I\$(top_srcdir)/lib -I\$(top_builddir)/include  -I\$(top_srcdir)/include/hamlib"
+AM_CPPFLAGS="${AM_CPPFLAGS} -I\$(top_srcdir)/include -I\$(top_srcdir)/src -I\$(top_srcdir)/lib -I\$(top_builddir)/include  -I\$(top_srcdir)/include/hamlib -D_TIME_BITS=64 -D_FILE_OFFSET_BITS=64"
 
 
 ## --------------- ##
@@ -224,7 +241,7 @@ AC_CHECK_FUNC([gethostbyname],
 	      [],
 	      [AC_CHECK_LIB([ws2_32],
 			    [main],
-			    [NET_LIBS="$NET_LIBS -lws2_32"],
+			    [NET_LIBS="$NET_LIBS -lws2_32 -liphlpapi"],
 			    [],
 			    [])
 	      ])
@@ -382,14 +399,14 @@ AS_IF([test x"$ax_cv_lib_readline" = "xno"], [
 
 dnl Check if INDI support in rigctl/rotctl is wanted
 AC_MSG_CHECKING([whether to use INDI in rigctl/rotctl])
-AS_IF([test x"${cf_with_cxx_binding}" = "xyes"], [
+#AS_IF([test x"${cf_with_cxx_binding}" = "xyes"], [
     AC_ARG_WITH([indi],
         [AS_HELP_STRING([--without-indi],
     	[disable INDI in rigctl/rotctl @<:@default=yes@:>@])],
-    	[cf_with_indi_support=no],
-    	[cf_with_indi_support=yes]
+    	[cf_with_indi_support=yes],
+    	[cf_with_indi_support=no]
     )
-])
+#])
 
 AS_IF([test x"$cf_with_indi_support" != "xno"], [
     # INDI support needs a C++ compiler, tested for presence above.
@@ -887,6 +904,7 @@ rigs/alinco/Makefile
 rigs/aor/Makefile
 rigs/barrett/Makefile
 rigs/codan/Makefile
+rigs/commradio/Makefile
 rigs/dorji/Makefile
 rigs/drake/Makefile
 rigs/dummy/Makefile
@@ -915,6 +933,7 @@ rigs/yaesu/Makefile
 rigs/gomspace/Makefile
 rigs/mds/Makefile
 rigs/anytone/Makefile
+rigs/motorola/Makefile
 tests/Makefile
 scripts/Makefile
 android/Makefile

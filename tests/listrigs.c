@@ -27,9 +27,9 @@
 #include <hamlib/rig.h>
 
 
-int print_caps_sum(const struct rig_caps *caps, void *data)
+int print_caps_sum(struct rig_caps *caps, void *data)
 {
-    char *fmt1 = "%-13s";
+    const char *fmt1 = "%-13s";
     printf("%6u \t%-22s \t%-23s\t%-8s   \t",
            caps->rig_model,
            caps->mfg_name,

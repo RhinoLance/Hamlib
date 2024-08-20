@@ -94,7 +94,7 @@ struct funcube_priv_data
  *
  */
 
-const struct rig_caps funcube_caps =
+struct rig_caps funcube_caps =
 {
     RIG_MODEL(RIG_MODEL_FUNCUBEDONGLE),
     .model_name =       "FUNcube Dongle",
@@ -159,7 +159,7 @@ const struct rig_caps funcube_caps =
 };
 
 
-const struct rig_caps funcubeplus_caps =
+struct rig_caps funcubeplus_caps =
 {
     RIG_MODEL(RIG_MODEL_FUNCUBEDONGLEPLUS),
     .model_name =       "FUNcube Dongle Pro+",
@@ -225,19 +225,19 @@ const struct rig_caps funcubeplus_caps =
 
 int funcube_init(RIG *rig)
 {
-    hamlib_port_t *rp = &rig->state.rigport;
+    hamlib_port_t *rp = RIGPORT(rig);
     struct funcube_priv_data *priv;
 
-    rig->state.priv = (struct funcube_priv_data *)calloc(sizeof(
+    STATE(rig)->priv = (struct funcube_priv_data *)calloc(sizeof(
                           struct funcube_priv_data), 1);
 
-    if (!rig->state.priv)
+    if (!STATE(rig)->priv)
     {
         /* whoops! memory shortage! */
         return -RIG_ENOMEM;
     }
 
-    priv = rig->state.priv;
+    priv = STATE(rig)->priv;
 
     priv->freq = 0;
 
@@ -255,19 +255,19 @@ int funcube_init(RIG *rig)
 
 int funcubeplus_init(RIG *rig)
 {
-    hamlib_port_t *rp = &rig->state.rigport;
+    hamlib_port_t *rp = RIGPORT(rig);
     struct funcube_priv_data *priv;
 
-    rig->state.priv = (struct funcube_priv_data *)calloc(sizeof(
+    STATE(rig)->priv = (struct funcube_priv_data *)calloc(sizeof(
                           struct funcube_priv_data), 1);
 
-    if (!rig->state.priv)
+    if (!STATE(rig)->priv)
     {
         /* whoops! memory shortage! */
         return -RIG_ENOMEM;
     }
 
-    priv = rig->state.priv;
+    priv = STATE(rig)->priv;
 
     priv->freq = 0;
 
@@ -290,12 +290,12 @@ int funcube_cleanup(RIG *rig)
         return -RIG_EINVAL;
     }
 
-    if (rig->state.priv)
+    if (STATE(rig)->priv)
     {
-        free(rig->state.priv);
+        free(STATE(rig)->priv);
     }
 
-    rig->state.priv = NULL;
+    STATE(rig)->priv = NULL;
 
     return RIG_OK;
 }
@@ -304,7 +304,7 @@ int funcube_cleanup(RIG *rig)
 const char *funcube_get_info(RIG *rig)
 {
     static char buf[64];
-    libusb_device_handle *udh = rig->state.rigport.handle;
+    libusb_device_handle *udh = RIGPORT(rig)->handle;
     struct libusb_device_descriptor desc;
 
     /* always succeeds since libusb-1.0.16 */
@@ -426,13 +426,15 @@ int set_freq_v1(libusb_device_handle *udh, unsigned int f, int timeout)
 
 int funcube_set_freq(RIG *rig, vfo_t vfo, freq_t freq)
 {
-    struct funcube_priv_data *priv = (struct funcube_priv_data *)rig->state.priv;
-    libusb_device_handle *udh = rig->state.rigport.handle;
+    struct funcube_priv_data *priv = (struct funcube_priv_data *)STATE(rig)->priv;
+    hamlib_port_t *rp = RIGPORT(rig);
+    libusb_device_handle *udh = rp->handle;
+
     int ret;
 
-    if ((ret = set_freq_v1(udh, freq, rig->state.rigport.timeout)) != RIG_OK)
+    if ((ret = set_freq_v1(udh, freq, rp->timeout)) != RIG_OK)
     {
-        if ((ret = set_freq_v0(udh, freq, rig->state.rigport.timeout)) == RIG_OK)
+        if ((ret = set_freq_v0(udh, freq, rp->timeout)) == RIG_OK)
         {
             priv->freq = freq;
         }
@@ -447,7 +449,8 @@ int funcube_set_freq(RIG *rig, vfo_t vfo, freq_t freq)
 
 int get_freq_v0(RIG *rig, vfo_t vfo, freq_t *freq)
 {
-    struct funcube_priv_data *priv = (struct funcube_priv_data *)rig->state.priv;
+    const struct funcube_priv_data *priv = (struct funcube_priv_data *)
+                                           STATE(rig)->priv;
 
     rig_debug(RIG_DEBUG_TRACE,
               "%s: frequency is not read from the device, the value shown is the last successfully set.\n",
@@ -459,7 +462,8 @@ int get_freq_v0(RIG *rig, vfo_t vfo, freq_t *freq)
 
 int get_freq_v1(RIG *rig, vfo_t vfo, freq_t *freq)
 {
-    libusb_device_handle *udh = rig->state.rigport.handle;
+    hamlib_port_t *rp = RIGPORT(rig);
+    libusb_device_handle *udh = rp->handle;
     int ret;
     unsigned int f;
     int actual_length;
@@ -474,7 +478,7 @@ int get_freq_v1(RIG *rig, vfo_t vfo, freq_t *freq)
               au8BufOut[3] & 0xFF);
 
     ret = libusb_interrupt_transfer(udh, OUTPUT_ENDPOINT, au8BufOut,
-                                    sizeof(au8BufOut), &actual_length, rig->state.rigport.timeout);
+                                    sizeof(au8BufOut), &actual_length, rp->timeout);
 
     if (ret < 0)
     {
@@ -484,7 +488,7 @@ int get_freq_v1(RIG *rig, vfo_t vfo, freq_t *freq)
     }
 
     ret = libusb_interrupt_transfer(udh, INPUT_ENDPOINT, au8BufIn, sizeof(au8BufIn),
-                                    &actual_length, rig->state.rigport.timeout);
+                                    &actual_length, rp->timeout);
 
     if (ret < 0 || actual_length != sizeof(au8BufIn))
     {
@@ -527,7 +531,8 @@ int funcube_get_freq(RIG *rig, vfo_t vfo, freq_t *freq)
 
 int funcube_set_level(RIG *rig, vfo_t vfo, setting_t level, value_t val)
 {
-    libusb_device_handle *udh = rig->state.rigport.handle;
+    hamlib_port_t *rp = RIGPORT(rig);
+    libusb_device_handle *udh = rp->handle;
     int ret;
     int actual_length;
     unsigned char au8BufOut[64] = "\0\0\0\0"; // endpoint size
@@ -600,7 +605,7 @@ int funcube_set_level(RIG *rig, vfo_t vfo, setting_t level, value_t val)
               au8BufOut[3] & 0xFF);
 
     ret = libusb_interrupt_transfer(udh, OUTPUT_ENDPOINT, au8BufOut,
-                                    sizeof(au8BufOut), &actual_length, rig->state.rigport.timeout);
+                                    sizeof(au8BufOut), &actual_length, rp->timeout);
 
     if (ret < 0)
     {
@@ -610,7 +615,7 @@ int funcube_set_level(RIG *rig, vfo_t vfo, setting_t level, value_t val)
     }
 
     ret = libusb_interrupt_transfer(udh, INPUT_ENDPOINT, au8BufIn, sizeof(au8BufIn),
-                                    &actual_length, rig->state.rigport.timeout);
+                                    &actual_length, rp->timeout);
 
     if (ret < 0 || actual_length != sizeof(au8BufIn))
     {
@@ -634,7 +639,8 @@ int funcube_set_level(RIG *rig, vfo_t vfo, setting_t level, value_t val)
 
 int funcube_get_level(RIG *rig, vfo_t vfo, setting_t level, value_t *val)
 {
-    libusb_device_handle *udh = rig->state.rigport.handle;
+    hamlib_port_t *rp = RIGPORT(rig);
+    libusb_device_handle *udh = rp->handle;
     int ret;
     int actual_length;
     unsigned char au8BufOut[64] = "\0\0\0\0"; // endpoint size
@@ -662,7 +668,7 @@ int funcube_get_level(RIG *rig, vfo_t vfo, setting_t level, value_t *val)
               au8BufOut[3] & 0xFF);
 
     ret = libusb_interrupt_transfer(udh, OUTPUT_ENDPOINT, au8BufOut,
-                                    sizeof(au8BufOut), &actual_length, rig->state.rigport.timeout);
+                                    sizeof(au8BufOut), &actual_length, rp->timeout);
 
     if (ret < 0)
     {
@@ -672,7 +678,7 @@ int funcube_get_level(RIG *rig, vfo_t vfo, setting_t level, value_t *val)
     }
 
     ret = libusb_interrupt_transfer(udh, INPUT_ENDPOINT, au8BufIn, sizeof(au8BufIn),
-                                    &actual_length, rig->state.rigport.timeout);
+                                    &actual_length, rp->timeout);
 
     if (ret < 0 || actual_length != sizeof(au8BufIn))
     {
@@ -759,7 +765,8 @@ int funcube_get_level(RIG *rig, vfo_t vfo, setting_t level, value_t *val)
 int funcube_hid_cmd(RIG *rig, unsigned char *au8BufOut, unsigned char *au8BufIn,
                     int inputSize)
 {
-    libusb_device_handle *udh = rig->state.rigport.handle;
+    hamlib_port_t *rp = RIGPORT(rig);
+    libusb_device_handle *udh = rp->handle;
     int ret;
     int actual_length;
     rig_debug(RIG_DEBUG_TRACE, "%s: HID packet set to %02x%02x%02x%02x\n",
@@ -767,7 +774,7 @@ int funcube_hid_cmd(RIG *rig, unsigned char *au8BufOut, unsigned char *au8BufIn,
               au8BufOut[3] & 0xFF);
 
     ret = libusb_interrupt_transfer(udh, OUTPUT_ENDPOINT, au8BufOut,
-                                    sizeof(au8BufOut), &actual_length, rig->state.rigport.timeout);
+                                    sizeof(au8BufOut), &actual_length, rp->timeout);
 
     if (ret < 0)
     {
@@ -777,7 +784,7 @@ int funcube_hid_cmd(RIG *rig, unsigned char *au8BufOut, unsigned char *au8BufIn,
     }
 
     ret = libusb_interrupt_transfer(udh, INPUT_ENDPOINT, au8BufIn, inputSize,
-                                    &actual_length, rig->state.rigport.timeout);
+                                    &actual_length, rp->timeout);
 
     if (ret < 0 || actual_length != inputSize)
     {
@@ -801,7 +808,6 @@ int funcube_hid_cmd(RIG *rig, unsigned char *au8BufOut, unsigned char *au8BufIn,
 
 int funcubepro_set_level(RIG *rig, vfo_t vfo, setting_t level, value_t val)
 {
-    ENTERFUNC;
     int ret;
     unsigned char au8BufOut[64] = { 0 }; // endpoint size
     unsigned char au8BufIn[64] = { 0 };  // endpoint size
@@ -862,7 +868,6 @@ int funcubepro_set_level(RIG *rig, vfo_t vfo, setting_t level, value_t val)
 
 int funcubepro_get_level(RIG *rig, vfo_t vfo, setting_t level, value_t *val)
 {
-    ENTERFUNC;
     int ret;
     int gain_state;
     unsigned char au8BufOut[64] = { 0 }; // endpoint size

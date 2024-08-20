@@ -45,15 +45,15 @@ int gemini_init(AMP *amp)
         return -RIG_EINVAL;
     }
 
-    amp->state.priv = (struct gemini_priv_data *)
+    AMPSTATE(amp)->priv = (struct gemini_priv_data *)
                       calloc(1, sizeof(struct gemini_priv_data));
 
-    if (!amp->state.priv)
+    if (!AMPSTATE(amp)->priv)
     {
         return -RIG_ENOMEM;
     }
 
-    amp->state.ampport.type.rig = RIG_PORT_NETWORK;
+    AMPPORT(amp)->type.rig = RIG_PORT_NETWORK;
 
     return RIG_OK;
 }
@@ -62,31 +62,26 @@ int gemini_close(AMP *amp)
 {
     rig_debug(RIG_DEBUG_VERBOSE, "%s called\n", __func__);
 
-    if (amp->state.priv) { free(amp->state.priv); }
+    if (AMPSTATE(amp)->priv) { free(AMPSTATE(amp)->priv); }
 
-    amp->state.priv = NULL;
+    AMPSTATE(amp)->priv = NULL;
 
     return RIG_OK;
 }
 
 int gemini_flushbuffer(AMP *amp)
 {
-    struct amp_state *rs;
-
     rig_debug(RIG_DEBUG_VERBOSE, "%s called\n", __func__);
 
-    rs = &amp->state;
-
-    return rig_flush(&rs->ampport);
+    return rig_flush(AMPPORT(amp));
 }
 
 int gemini_transaction(AMP *amp, const char *cmd, char *response,
                        int response_len)
 {
 
-    struct amp_state *rs;
+    hamlib_port_t *ampp = AMPPORT(amp);
     int err;
-    int len = 0;
 
     rig_debug(RIG_DEBUG_VERBOSE, "%s called, cmd=%s\n", __func__, cmd);
 
@@ -94,18 +89,16 @@ int gemini_transaction(AMP *amp, const char *cmd, char *response,
 
     gemini_flushbuffer(amp);
 
-    rs = &amp->state;
-
     // Now send our command
-    err = write_block(&rs->ampport, (unsigned char *) cmd, strlen(cmd));
+    err = write_block(ampp, (unsigned char *) cmd, strlen(cmd));
 
     if (err != RIG_OK) { return err; }
 
     if (response) // if response expected get it
     {
         response[0] = 0;
-        len = read_string(&rs->ampport, (unsigned char *) response, response_len, "\n",
-                          1, 0, 1);
+        int len = read_string(ampp, (unsigned char *) response, response_len,
+                              "\n", 1, 0, 1);
 
         if (len < 0)
         {
@@ -125,6 +118,7 @@ int gemini_transaction(AMP *amp, const char *cmd, char *response,
  * Get Info
  * returns the model name string
  */
+// cppcheck-suppress constParameterPointer
 const char *gemini_get_info(AMP *amp)
 {
     const struct amp_caps *rc;
@@ -143,7 +137,7 @@ int gemini_status_parse(AMP *amp)
     int retval, n = 0;
     char *p;
     char responsebuf[GEMINIBUFSZ];
-    struct gemini_priv_data *priv = amp->state.priv;
+    struct gemini_priv_data *priv = AMPSTATE(amp)->priv;
 
     retval = gemini_transaction(amp, "S\n", responsebuf, sizeof(responsebuf));
 
@@ -195,7 +189,7 @@ int gemini_get_freq(AMP *amp, freq_t *freq)
 
     if (!amp) { return -RIG_EINVAL; }
 
-    priv = amp->state.priv;
+    priv = AMPSTATE(amp)->priv;
 
     retval = gemini_status_parse(amp);
 
@@ -234,7 +228,7 @@ int gemini_set_freq(AMP *amp, freq_t freq)
 int gemini_get_level(AMP *amp, setting_t level, value_t *val)
 {
     int retval;
-    struct gemini_priv_data *priv = amp->state.priv;
+    struct gemini_priv_data *priv = AMPSTATE(amp)->priv;
 
 
     rig_debug(RIG_DEBUG_VERBOSE, "%s called\n", __func__);

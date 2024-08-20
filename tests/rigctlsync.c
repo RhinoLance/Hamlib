@@ -23,6 +23,7 @@
  *   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  *
  */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 #include <hamlib/config.h>
 
@@ -539,11 +540,11 @@ int main(int argc, char *argv[])
 
     if (rig_file)
     {
-        strncpy(my_rig->state.rigport.pathname, rig_file, HAMLIB_FILPATHLEN - 1);
+        strncpy(RIGPORT(my_rig)->pathname, rig_file, HAMLIB_FILPATHLEN - 1);
     }
 
     fprintf(stderr, "rig to send frequency to: %s\n", rig_file2);
-    strncpy(my_rig_sync->state.rigport.pathname, rig_file2, HAMLIB_FILPATHLEN - 1);
+    strncpy(RIGPORT(my_rig_sync)->pathname, rig_file2, HAMLIB_FILPATHLEN - 1);
 
 #if 0
 
@@ -552,22 +553,22 @@ int main(int argc, char *argv[])
      */
     if (ptt_type != RIG_PTT_NONE)
     {
-        my_rig->state.pttport.type.ptt = ptt_type;
+        PTTPORT(my_rig)->type.ptt = ptt_type;
     }
 
     if (dcd_type != RIG_DCD_NONE)
     {
-        my_rig->state.dcdport.type.dcd = dcd_type;
+        DCDPORT(my_rig)->type.dcd = dcd_type;
     }
 
     if (ptt_file)
     {
-        strncpy(my_rig->state.pttport.pathname, ptt_file, HAMLIB_FILPATHLEN - 1);
+        strncpy(PTTPORT(my_rig)->pathname, ptt_file, HAMLIB_FILPATHLEN - 1);
     }
 
     if (dcd_file)
     {
-        strncpy(my_rig->state.dcdport.pathname, dcd_file, HAMLIB_FILPATHLEN - 1);
+        strncpy(DCDPORT(my_rig)->pathname, dcd_file, HAMLIB_FILPATHLEN - 1);
     }
 
 #endif
@@ -575,12 +576,12 @@ int main(int argc, char *argv[])
     /* FIXME: bound checking and port type == serial */
     if (serial_rate != 0)
     {
-        my_rig->state.rigport.parm.serial.rate = serial_rate;
+        RIGPORT(my_rig)->parm.serial.rate = serial_rate;
     }
 
     if (serial_rate2 != 0)
     {
-        my_rig_sync->state.rigport.parm.serial.rate = serial_rate2;
+        RIGPORT(my_rig_sync)->parm.serial.rate = serial_rate2;
     }
 
 
@@ -629,7 +630,7 @@ int main(int argc, char *argv[])
 
     if (verbose > 0)
     {
-        printf("Opened rig model %d, '%s'\n",
+        printf("Opened rig model %u, '%s'\n",
                my_rig->caps->rig_model,
                my_rig->caps->model_name);
     }
@@ -643,21 +644,15 @@ int main(int argc, char *argv[])
     do
     {
         freq_t freq;
-        int retval = rig_get_freq(my_rig, RIG_VFO_CURR, &freq);
+        retcode = rig_get_freq(my_rig, RIG_VFO_CURR, &freq);
 
-        if (retval != RIG_OK)
+        if (retcode != RIG_OK)
         {
             rig_debug(RIG_DEBUG_ERR, "%s: Error in rig_get_freq: %s\n", __func__,
-                      rigerror(retval));
+                      rigerror(retcode));
         }
 
-        if (retval != RIG_OK)
-        {
-            rig_debug(RIG_DEBUG_ERR, "%s: Error in rig_set_freq: %s\n", __func__,
-                      rigerror(retval));
-        }
-
-        retval = rig_set_freq(my_rig_sync, RIG_VFO_CURR, freq);
+        retcode = rig_set_freq(my_rig_sync, RIG_VFO_CURR, freq);
 
         hl_usleep(400 * 1000); // fairly fast to keep up
     }
@@ -671,7 +666,7 @@ int main(int argc, char *argv[])
 
 void usage()
 {
-    char *name = "rigctlsync";
+    const char *name = "rigctlsync";
     printf("Usage: %s -m rignumber -r comport -s baud -M rignumber -R comport [OPTIONS]...\n\n"
            "Will copy frequency from -m rig to -M rig\n"
            "e.g. will keep SDR# synchronized to a rig.\n\n",

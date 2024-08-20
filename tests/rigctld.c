@@ -22,6 +22,7 @@
  *   51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  *
  */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 
 #include <hamlib/config.h>
 
@@ -73,6 +74,7 @@
 
 #include "rigctl_parse.h"
 #include "riglist.h"
+#include "token.h"
 
 /*
  * Reminder: when adding long options,
@@ -105,10 +107,9 @@ static struct option long_options[] =
     {"twiddle_rit",     1, 0, 'w'},
     {"uplink",          1, 0, 'x'},
     {"debug-time-stamps", 0, 0, 'Z'},
-    {"multicast-addr",  1, 0, 'M'},
-    {"multicast-port",  1, 0, 'n'},
     {"password",        1, 0, 'A'},
     {"rigctld-idle",    0, 0, 'R'},
+    {"bind-all",        0, 0, 'b'},
     {0, 0, 0, 0}
 };
 
@@ -137,15 +138,13 @@ static volatile int rig_opened = 0;
 static int verbose;
 
 #ifdef HAVE_SIG_ATOMIC_T
-static sig_atomic_t volatile ctrl_c;
+static sig_atomic_t volatile ctrl_c = 0;
 #else
-static int volatile ctrl_c;
+static int volatile ctrl_c = 0;
 #endif
 
 const char *portno = "4532";
 const char *src_addr = NULL; /* INADDR_ANY */
-const char *multicast_addr = "0.0.0.0";
-int multicast_port = 4532;
 extern char rigctld_password[65];
 char resp_sep = '\n';
 extern int lock_mode;
@@ -153,6 +152,7 @@ extern powerstat_t rig_powerstat;
 static int rigctld_idle =
     0; // if true then rig will close when no clients are connected
 static int skip_open = 0;
+static int bind_all = 0;
 
 #define MAXCONFLEN 2048
 
@@ -198,6 +198,10 @@ static void signal_handler(int sig)
     switch (sig)
     {
     case SIGINT:
+    case SIGTERM:
+        fprintf(stderr, "\nTerminating application, caught signal %d\n", sig);
+        // Close stdin to stop reading input
+        fclose(stdin);
         ctrl_c = 1;
         break;
 
@@ -257,7 +261,7 @@ int main(int argc, char *argv[])
 
     struct addrinfo hints, *result, *saved_result;
     int sock_listen;
-    int reuseaddr = 1;
+//    int reuseaddr = 1;
     int twiddle_timeout = 0;
     int twiddle_rit = 0;
     int uplink = 0;
@@ -314,6 +318,10 @@ int main(int argc, char *argv[])
 
         case 'R':
             rigctld_idle = 1;
+            break;
+
+        case 'b':
+            bind_all = 1;
             break;
 
         case 'A':
@@ -593,7 +601,7 @@ int main(int argc, char *argv[])
 
             twiddle_rit = atoi(optarg);
             fprintf(stderr,
-                    "twiddle_timeout is deprecated...use e.g. --set-conf=twiddle_timeout=5\n");
+                    "twiddle_rit is deprecated...use e.g. --set-conf=twiddle_rit=1\n");
             break;
 
 
@@ -610,33 +618,6 @@ int main(int argc, char *argv[])
 
         case 'Z':
             rig_set_debug_time_stamp(1);
-            break;
-
-        case 'M':
-            if (!optarg)
-            {
-                usage();    /* wrong arg count */
-                exit(1);
-            }
-
-            multicast_addr = optarg;
-            break;
-
-        case 'n':
-            if (!optarg)
-            {
-                usage();    /* wrong arg count */
-                exit(1);
-            }
-
-            multicast_port = atoi(optarg);
-
-            if (multicast_port == 0)
-            {
-                fprintf(stderr, "Invalid multicast port: %s\n", optarg);
-                exit(1);
-            }
-
             break;
 
         default:
@@ -681,63 +662,92 @@ int main(int argc, char *argv[])
         exit(2);
     }
 
-    retcode = set_conf(my_rig, conf_parms);
+    my_rig->caps->ptt_type = ptt_type;
+    char *token = strtok(conf_parms, ",");
+    struct rig_state *rs = STATE(my_rig);
 
-    if (retcode != RIG_OK)
+    while (token)
     {
-        fprintf(stderr, "Config parameter error: %s\n", rigerror(retcode));
-        exit(2);
+        char mytoken[100], myvalue[100];
+        hamlib_token_t lookup;
+        sscanf(token, "%99[^=]=%99s", mytoken, myvalue);
+        //printf("mytoken=%s,myvalue=%s\n",mytoken, myvalue);
+        lookup = rig_token_lookup(my_rig, mytoken);
+
+        if (lookup == 0)
+        {
+            rig_debug(RIG_DEBUG_ERR, "%s: no such token as '%s'\n", __func__, mytoken);
+            token = strtok(NULL, ",");
+            continue;
+        }
+
+        retcode = rig_set_conf(my_rig, rig_token_lookup(my_rig, mytoken), myvalue);
+
+        if (retcode != RIG_OK)
+        {
+            fprintf(stderr, "Config parameter error: %s\n", rigerror(retcode));
+            exit(2);
+        }
+
+        token = strtok(NULL, ",");
+        ptt_type = my_rig->caps->ptt_type; // in case we set the ptt_type with set_conf
     }
 
     if (rig_file)
     {
-        strncpy(my_rig->state.rigport.pathname, rig_file, HAMLIB_FILPATHLEN - 1);
+        rig_set_conf(my_rig, TOK_PATHNAME, rig_file);
     }
 
-    my_rig->state.twiddle_timeout = twiddle_timeout;
-    my_rig->state.twiddle_rit = twiddle_rit;
-    my_rig->state.uplink = uplink;
+    rs->twiddle_timeout = twiddle_timeout;
+    rs->twiddle_rit = twiddle_rit;
+    rs->uplink = uplink;
     rig_debug(RIG_DEBUG_TRACE, "%s: twiddle=%d, uplink=%d, twiddle_rit=%d\n",
               __func__,
-              my_rig->state.twiddle_timeout, my_rig->state.uplink, my_rig->state.twiddle_rit);
+              rs->twiddle_timeout, rs->uplink, rs->twiddle_rit);
 
     /*
      * ex: RIG_PTT_PARALLEL and /dev/parport0
      */
     if (ptt_type != RIG_PTT_NONE)
     {
-        my_rig->state.pttport.type.ptt = ptt_type;
-        my_rig->state.pttport_deprecated.type.ptt = ptt_type;
+        PTTPORT(my_rig)->type.ptt = ptt_type;
+        rs->pttport_deprecated.type.ptt = ptt_type;
         // This causes segfault since backend rig_caps are const
-        // rigctld will use the rig->state version of this for clients
+        // rigctld will use the STATE(rig) version of this for clients
         //my_rig->caps->ptt_type = ptt_type;
     }
 
     if (dcd_type != RIG_DCD_NONE)
     {
-        my_rig->state.dcdport.type.dcd = dcd_type;
-        my_rig->state.dcdport_deprecated.type.dcd = dcd_type;
+        DCDPORT(my_rig)->type.dcd = dcd_type;
+        rs->dcdport_deprecated.type.dcd = dcd_type;
     }
 
     if (ptt_file)
     {
-        strncpy(my_rig->state.pttport.pathname, ptt_file, HAMLIB_FILPATHLEN - 1);
-        strncpy(my_rig->state.pttport_deprecated.pathname, ptt_file,
+        strncpy(PTTPORT(my_rig)->pathname, ptt_file, HAMLIB_FILPATHLEN - 1);
+        strncpy(rs->pttport_deprecated.pathname, ptt_file,
                 HAMLIB_FILPATHLEN - 1);
+        // default to RTS when ptt_type is not specified
+        if (ptt_type == RIG_PTT_NONE) 
+        {
+            rig_debug(RIG_DEBUG_VERBOSE, "%s: defaulting to RTS PTT\n", __func__);
+            my_rig->caps->ptt_type = ptt_type = RIG_PTT_SERIAL_RTS;
+        }
     }
 
     if (dcd_file)
     {
-        strncpy(my_rig->state.dcdport.pathname, dcd_file, HAMLIB_FILPATHLEN - 1);
-        strncpy(my_rig->state.dcdport_deprecated.pathname, dcd_file,
+        strncpy(DCDPORT(my_rig)->pathname, dcd_file, HAMLIB_FILPATHLEN - 1);
+        strncpy(rs->dcdport_deprecated.pathname, dcd_file,
                 HAMLIB_FILPATHLEN - 1);
     }
 
     /* FIXME: bound checking and port type == serial */
     if (serial_rate != 0)
     {
-        my_rig->state.rigport.parm.serial.rate = serial_rate;
-        my_rig->state.rigport_deprecated.parm.serial.rate = serial_rate;
+        RIGPORT(my_rig)->parm.serial.rate = serial_rate;
+        rs->rigport_deprecated.parm.serial.rate = serial_rate;
     }
 
     if (civaddr)
@@ -751,6 +761,8 @@ int main(int argc, char *argv[])
     if (show_conf)
     {
         rig_token_foreach(my_rig, print_conf_list, (rig_ptr_t)my_rig);
+        fflush(stdout);
+        exit(0);
     }
 
     /*
@@ -801,7 +813,7 @@ int main(int argc, char *argv[])
 
         if (verbose > RIG_DEBUG_ERR)
         {
-            printf("Closed rig model %d, '%s - will reopen for clients'\n",
+            printf("Closed rig model %u, '%s - will reopen for clients'\n",
                    my_rig->caps->rig_model,
                    my_rig->caps->model_name);
         }
@@ -861,18 +873,6 @@ int main(int argc, char *argv[])
 
     saved_result = result;
 
-    enum multicast_item_e items = RIG_MULTICAST_POLL | RIG_MULTICAST_TRANSCEIVE |
-                                  RIG_MULTICAST_SPECTRUM;
-    retcode = network_multicast_publisher_start(my_rig, multicast_addr,
-              multicast_port, items);
-
-    if (retcode != RIG_OK)
-    {
-        rig_debug(RIG_DEBUG_ERR, "%s: network_multicast_server failed: %s\n", __FILE__,
-                  rigerror(retcode));
-        // we will consider this non-fatal for now
-    }
-
     do
     {
         sock_listen = socket(result->ai_family,
@@ -886,6 +886,35 @@ int main(int argc, char *argv[])
             exit(2);
         }
 
+        const int optval = 1;
+#ifdef __MINGW32__
+
+        if (setsockopt(sock_listen, SOL_SOCKET, SO_REUSEADDR, (PCHAR)&optval,
+                       sizeof(optval)) < 0)
+#else
+        if (setsockopt(sock_listen, SOL_SOCKET, SO_REUSEADDR, &optval,
+                       sizeof(optval)) < 0)
+#endif
+        {
+            rig_debug(RIG_DEBUG_ERR, "%s: error enabling UDP address reuse: %s\n", __func__,
+                      strerror(errno));
+        }
+
+        // Windows does not have SO_REUSEPORT. However, SO_REUSEADDR works in a similar way.
+#if defined(SO_REUSEPORT)
+
+        if (setsockopt(sock_listen, SOL_SOCKET, SO_REUSEPORT, &optval,
+                       sizeof(optval)) < 0)
+        {
+            rig_debug(RIG_DEBUG_ERR, "%s: error enabling UDP port reuse: %s\n", __func__,
+                      strerror(errno));
+        }
+
+#endif
+
+
+#if 0
+
         if (setsockopt(sock_listen,
                        SOL_SOCKET,
                        SO_REUSEADDR,
@@ -898,6 +927,8 @@ int main(int argc, char *argv[])
             freeaddrinfo(saved_result);     /* No longer needed */
             exit(1);
         }
+
+#endif
 
 #ifdef IPV6_V6ONLY
 
@@ -923,19 +954,33 @@ int main(int argc, char *argv[])
 
 #endif
 
-        if (0 == bind(sock_listen, result->ai_addr, result->ai_addrlen))
+        int retval = bind(sock_listen, result->ai_addr, result->ai_addrlen);
+
+        if (retval == 0)
         {
             break;
         }
 
-        handle_error(RIG_DEBUG_WARN, "binding failed (trying next interface)");
+        {
+            rig_debug(RIG_DEBUG_ERR, "%s: bind: %s\n", __func__, strerror(errno));
+        }
+
+        if (bind_all)
+        {
+            handle_error(RIG_DEBUG_WARN, "binding failed (trying next interface)");
+        }
+        else
+        {
+            handle_error(RIG_DEBUG_WARN, "binding failed");
+        }
+
 #ifdef __MINGW32__
         closesocket(sock_listen);
 #else
         close(sock_listen);
 #endif
     }
-    while ((result = result->ai_next) != NULL);
+    while (bind_all && ((result = result->ai_next) != NULL));
 
     freeaddrinfo(saved_result);     /* No longer needed */
 
@@ -978,6 +1023,16 @@ int main(int argc, char *argv[])
     }
 
 #endif
+#ifdef SIGTERM
+    memset(&act, 0, sizeof act);
+    act.sa_handler = signal_handler;
+
+    if (sigaction(SIGTERM, &act, NULL))
+    {
+        handle_error(RIG_DEBUG_ERR, "sigaction SIGTERM");
+    }
+
+#endif
 #elif defined (WIN32)
 
     if (!SetConsoleCtrlHandler(CtrlHandler, TRUE))
@@ -999,6 +1054,14 @@ int main(int argc, char *argv[])
     if (SIG_ERR == signal(SIGINT, signal_handler))
     {
         handle_error(RIG_DEBUG_ERR, "signal SIGINT");
+    }
+
+#endif
+#ifdef SIGTERM
+
+    if (SIG_ERR == signal(SIGTERM, signal_handler))
+    {
+        handle_error(RIG_DEBUG_ERR, "signal SIGTERM");
     }
 
 #endif
@@ -1048,7 +1111,7 @@ int main(int argc, char *argv[])
             {
                 rig_debug(RIG_DEBUG_VERBOSE, "%s: ignoring interrupted system call\n",
                           __func__);
-                retcode = 0;
+                //retcode = 0; // not used?
             }
         }
         else if (retcode == 0)
@@ -1110,7 +1173,7 @@ int main(int argc, char *argv[])
 #endif
         }
     }
-    while (retcode == 0 && !ctrl_c);
+    while (!ctrl_c);
 
     rig_debug(RIG_DEBUG_VERBOSE, "%s: while loop done\n", __func__);
 
@@ -1123,13 +1186,16 @@ int main(int argc, char *argv[])
         rig_debug(RIG_DEBUG_WARN, "%u outstanding client(s)\n", client_count);
     }
 
+#ifdef __MINGW__
+    closesocket(sock_listen);
+#else
+    close(sock_listen);
+#endif
     rig_close(my_rig);
     mutex_rigctld(0);
 #else
     rig_close(my_rig); /* close port */
 #endif
-
-    network_multicast_publisher_stop(my_rig);
 
     rig_cleanup(my_rig); /* if you care about memory */
 
@@ -1181,6 +1247,7 @@ void *handle_socket(void *arg)
     char send_cmd_term = '\r';  /* send_cmd termination char */
     int ext_resp = 0;
     rig_powerstat = RIG_POWER_ON; // defaults to power on
+    struct timespec powerstat_check_time;
 
     fsockin = get_fsockin(handle_data_arg);
 
@@ -1243,8 +1310,10 @@ void *handle_socket(void *arg)
         mutex_rigctld(1);
         rig_get_powerstat(my_rig, &rig_powerstat);
         mutex_rigctld(0);
-        my_rig->state.powerstat = rig_powerstat;
+        STATE(my_rig)->powerstat = rig_powerstat;
     }
+
+    elapsed_ms(&powerstat_check_time, HAMLIB_ELAPSED_SET);
 
     do
     {
@@ -1262,7 +1331,6 @@ void *handle_socket(void *arg)
 
         if (rig_opened) // only do this if rig is open
         {
-            powerstat_t powerstat;
             rig_debug(RIG_DEBUG_TRACE, "%s: doing rigctl_parse vfo_mode=%d, secure=%d\n",
                       __func__,
                       handle_data_arg->vfo_mode, handle_data_arg->use_password);
@@ -1275,8 +1343,11 @@ void *handle_socket(void *arg)
 
             // If we get a timeout, the rig might be powered off
             // Update our power status in case power gets turned off
-            if (retcode == -RIG_ETIMEOUT && my_rig->caps->get_powerstat)
+            // Check power status if rig is powered off, but not more often than once per second
+            if (my_rig->caps->get_powerstat && (retcode == -RIG_ETIMEOUT ||
+                    (retcode == -RIG_EPOWER && elapsed_ms(&powerstat_check_time, HAMLIB_ELAPSED_GET) >= 1000)))
             {
+                powerstat_t powerstat;
                 rig_get_powerstat(my_rig, &powerstat);
                 rig_powerstat = powerstat;
 
@@ -1284,6 +1355,8 @@ void *handle_socket(void *arg)
                 {
                     retcode = -RIG_EPOWER;
                 }
+
+                elapsed_ms(&powerstat_check_time, HAMLIB_ELAPSED_SET);
             }
         }
         else
@@ -1325,7 +1398,12 @@ void *handle_socket(void *arg)
     }
     while (!ctrl_c && (retcode == RIG_OK || RIG_IS_SOFT_ERRCODE(-retcode)));
 
+#if defined(HAVE_PTHREAD)
+
     if (rigctld_idle && client_count == 1)
+#else
+    if (rigctld_idle)
+#endif
     {
         rig_close(my_rig);
 
@@ -1336,7 +1414,7 @@ void *handle_socket(void *arg)
 #ifdef HAVE_PTHREAD
     --client_count;
 
-    if (rigctld_idle && client_count > 0) { printf("%d client%s still connected so rig remains open\n", client_count, client_count > 1 ? "s" : ""); }
+    if (rigctld_idle && client_count > 0) { printf("%u client%s still connected so rig remains open\n", client_count, client_count > 1 ? "s" : ""); }
 
 #if 0
     mutex_rigctld(1);
@@ -1445,8 +1523,6 @@ void usage(void)
         "  -w, --twiddle_rit             suppress VFOB getfreq so RIT can be twiddled\n"
         "  -x, --uplink                  set uplink get_freq ignore, 1=Sub, 2=Main\n"
         "  -Z, --debug-time-stamps       enable time stamps for debug messages\n"
-        "  -M, --multicast-addr=addr     set multicast UDP address, default 0.0.0.0 (off), recommend 224.0.1.1\n"
-        "  -n, --multicast-port=port     set multicast UDP port, default 4532\n"
         "  -A, --password                set password for rigctld access\n"
         "  -R, --rigctld-idle            make rigctld close the rig when no clients are connected\n"
         "  -h, --help                    display this help and exit\n"

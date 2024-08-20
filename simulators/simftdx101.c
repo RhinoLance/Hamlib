@@ -2,10 +2,12 @@
 // gcc -o simyaesu simyaesu.c
 #define _XOPEN_SOURCE 700
 // since we are POSIX here we need this
+#if 0
 struct ip_mreq
-  {
+{
     int dummy;
-  };
+};
+#endif
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -30,6 +32,12 @@ int na = 0;
 int ex039 = 0;
 int keyspd = 20;
 int split = 0;
+int power = 50;
+int rport_gain_ssb = 50;
+int rport_gain_am = 50;
+int rport_gain_fm = 50;
+int rport_gain_psk = 50;
+int syncvfo=0;
 
 // ID 0310 == 310, Must drop leading zero
 typedef enum nc_rigid_e
@@ -65,6 +73,8 @@ getmyline(int fd, char *buf)
 
         if (c == ';') { return strlen(buf); }
     }
+
+    if (strlen(buf) == 0) { hl_usleep(10 * 1000); }
 
     return strlen(buf);
 }
@@ -213,11 +223,6 @@ int main(int argc, char *argv[])
         {
             sscanf(buf, "FB%f", &freqB);
         }
-        else if (strcmp(buf, "VS;") == 0)
-        {
-            SNPRINTF(buf, sizeof(buf), "VS%c;", vfo == 0 ? '0' : '1');
-            n = write(fd, buf, strlen(buf));
-        }
         else if (strcmp(buf, "FT;") == 0)
         {
             SNPRINTF(buf, sizeof(buf), "FT%d;", ft);
@@ -230,7 +235,7 @@ int main(int argc, char *argv[])
         }
         else if (strncmp(buf, "MD0", 3) == 0)
         {
-            sscanf(buf,"MD0%d", &modeA);
+            sscanf(buf, "MD0%d", &modeA);
         }
         else if (strcmp(buf, "MD1;") == 0)
         {
@@ -239,7 +244,7 @@ int main(int argc, char *argv[])
         }
         else if (strncmp(buf, "MD1", 3) == 0)
         {
-            sscanf(buf,"MD1%d", &modeB);
+            sscanf(buf, "MD1%d", &modeB);
         }
         else if (strcmp(buf, "VS;") == 0)
         {
@@ -268,6 +273,15 @@ int main(int argc, char *argv[])
         {
             sscanf(buf, "AI%d", &ai);
         }
+        else if (strcmp(buf, "PC;") == 0)
+        {
+            SNPRINTF(buf, sizeof(buf), "PC%d;", power);
+            n = write(fd, buf, strlen(buf));
+        }
+        else if (strncmp(buf, "PC", 2) == 0)
+        {
+            sscanf(buf, "PC%d", &power);
+        }
         else if (strcmp(buf, "SH0;") == 0)
         {
             SNPRINTF(buf, sizeof(buf), "SH0%d;", sh);
@@ -291,7 +305,7 @@ int main(int argc, char *argv[])
             SNPRINTF(buf, sizeof(buf), "EX039%d;", ex039);
             n = write(fd, buf, strlen(buf));
         }
-        else if (strncmp(buf, "EX039", 3) == 0)
+        else if (strncmp(buf, "EX039", 5) == 0)
         {
             sscanf(buf, "EX039%d", &ex039);
         }
@@ -302,21 +316,40 @@ int main(int argc, char *argv[])
         }
         else if (strncmp(buf, "KS;", 3) == 0)
         {
-            sprintf(buf,"KS%d;", keyspd);
+            sprintf(buf, "KS%d;", keyspd);
             n = write(fd, buf, strlen(buf));
         }
-        else if (strncmp(buf,"KS",2) == 0)
+        else if (strncmp(buf, "KS", 2) == 0)
         {
-            sscanf(buf,"KS%03d", &keyspd);
+            sscanf(buf, "KS%03d", &keyspd);
         }
         else if (strncmp(buf, "ST;", 3) == 0)
         {
-            sprintf(buf,"ST%d;", split);
+            sprintf(buf, "ST%d;", split);
             n = write(fd, buf, strlen(buf));
         }
-        else if (strncmp(buf,"ST",2) == 0)
+        else if (strncmp(buf, "ST", 2) == 0)
         {
-            sscanf(buf,"ST%d", &split);
+            sscanf(buf, "ST%d", &split);
+        }
+        else if (strcmp(buf, "EX010415;") == 0)
+        {
+            sprintf(buf, "EX010415%03d;", rport_gain_psk);
+            n = write(fd, buf, strlen(buf));
+        }
+        else if (strncmp(buf, "EX010415", 8) == 0)
+        {
+            printf("Here#1");
+            sscanf(buf, "EX010415%d", &rport_gain_psk);
+        }
+        else if (strcmp(buf, "SY;") == 0)
+        {
+            sprintf(buf, "SY%d;", syncvfo);
+            n = write(fd, buf, strlen(buf));
+        }
+        else if (strncmp(buf, "SY", 2) == 0)
+        {
+            sscanf(buf, "SY%d", &syncvfo);
         }
 
         else if (strlen(buf) > 0)

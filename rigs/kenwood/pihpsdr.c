@@ -68,6 +68,7 @@ static int pihspdr_set_channel(RIG *rig, vfo_t vfo, const channel_t *chan);
 static struct kenwood_priv_caps  ts2000_priv_caps  =
 {
     .cmdtrm =  EOM_KEN,
+    .tone_table_base = 1,
 };
 
 /* memory capabilities */
@@ -94,12 +95,12 @@ static struct kenwood_priv_caps  ts2000_priv_caps  =
 /*
  * PiHPSDR rig capabilities. (Emulates Kenwood TS-2000)
  */
-const struct rig_caps pihpsdr_caps =
+struct rig_caps pihpsdr_caps =
 {
     RIG_MODEL(RIG_MODEL_HPSDR),
     .model_name = "PiHPSDR",
     .mfg_name =  "OpenHPSDR",
-    .version =  BACKEND_VER ".1",
+    .version =  BACKEND_VER ".2",
     .copyright =  "LGPL",
     .status =  RIG_STATUS_STABLE,
     .rig_type =  RIG_TYPE_TRANSCEIVER,
@@ -122,7 +123,6 @@ const struct rig_caps pihpsdr_caps =
     .has_set_level =  RIG_LEVEL_SET(PIHPSDR_LEVEL_ALL),
     .has_get_parm =  RIG_PARM_NONE,
     .has_set_parm =  RIG_PARM_NONE,    /* FIXME: parms */
-    .level_gran =  {},                 /* FIXME: granularity */
     .parm_gran =  {},
     .vfo_ops =  PIHPSDR_VFO_OP,
     .scan_ops =  PIHPSDR_SCAN_OP,
@@ -793,6 +793,7 @@ int pihpsdr_set_level(RIG *rig, vfo_t vfo, setting_t level, value_t val)
 {
     char levelbuf[16];
     int i, kenwood_val;
+    struct rig_state *rs = STATE(rig);
 
     rig_debug(RIG_DEBUG_VERBOSE, "%s called\n", __func__);
 
@@ -827,11 +828,17 @@ int pihpsdr_set_level(RIG *rig, vfo_t vfo, setting_t level, value_t val)
         break;
 
     case RIG_LEVEL_AGC:
-        if (kenwood_val == RIG_AGC_OFF) { kenwood_val = 0; }
-        else if (kenwood_val == RIG_AGC_SUPERFAST) { kenwood_val = 5; }
+        if (kenwood_val == RIG_AGC_SUPERFAST) { kenwood_val = 5; }
         else if (kenwood_val == RIG_AGC_FAST) { kenwood_val = 10; }
         else if (kenwood_val == RIG_AGC_MEDIUM) { kenwood_val = 15; }
         else if (kenwood_val == RIG_AGC_SLOW) { kenwood_val = 20; }
+        else if (kenwood_val != RIG_AGC_OFF)
+        {
+            rig_debug(RIG_DEBUG_ERR,
+                      "%s: unknown AGC level, expect OFF,SLOW,MEDIUM,FAST,SUPERFAST, got %d\n",
+                      __func__, kenwood_val);
+            return -RIG_EINVAL;
+        }
 
         SNPRINTF(levelbuf, sizeof(levelbuf), "GT%03d", kenwood_val);
         break;
@@ -847,9 +854,9 @@ int pihpsdr_set_level(RIG *rig, vfo_t vfo, setting_t level, value_t val)
         {
             int foundit = 0;
 
-            for (i = 0; i < HAMLIB_MAXDBLSTSIZ && rig->state.attenuator[i]; i++)
+            for (i = 0; i < HAMLIB_MAXDBLSTSIZ && rs->attenuator[i]; i++)
             {
-                if (val.i == rig->state.attenuator[i])
+                if (val.i == rs->attenuator[i])
                 {
                     SNPRINTF(levelbuf, sizeof(levelbuf), "RA%02d", i + 1);
                     foundit = 1;
@@ -876,9 +883,9 @@ int pihpsdr_set_level(RIG *rig, vfo_t vfo, setting_t level, value_t val)
         {
             int foundit = 0;
 
-            for (i = 0; i < HAMLIB_MAXDBLSTSIZ && rig->state.preamp[i]; i++)
+            for (i = 0; i < HAMLIB_MAXDBLSTSIZ && rs->preamp[i]; i++)
             {
-                if (val.i == rig->state.preamp[i])
+                if (val.i == rs->preamp[i])
                 {
                     SNPRINTF(levelbuf, sizeof(levelbuf), "PA%01d", i + 1);
                     foundit = 1;
@@ -981,7 +988,7 @@ int pihpsdr_get_level(RIG *rig, vfo_t vfo, setting_t level, value_t *val)
 
         if (lvl > 9)
         {
-            val->i = rig->state.preamp[0];
+            val->i = STATE(rig)->preamp[0];
         }
 
         break;
@@ -1012,7 +1019,7 @@ int pihpsdr_get_level(RIG *rig, vfo_t vfo, setting_t level, value_t *val)
 
         if (lvl > 99)
         {
-            val->i = rig->state.attenuator[0];    /* Since the TS-2000 only has one step on the attenuator */
+            val->i = STATE(rig)->attenuator[0];    /* Since the TS-2000 only has one step on the attenuator */
         }
 
         break;

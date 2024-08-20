@@ -59,14 +59,14 @@ static const struct icom_priv_caps ic2730_priv_caps =
     1,      /* no XCHG */
 };
 
-const struct rig_caps ic2730_caps =
+struct rig_caps ic2730_caps =
 {
     RIG_MODEL(RIG_MODEL_IC2730),
     .model_name = "IC-2730",
     .mfg_name =  "Icom",
     .version =  BACKEND_VER ".0",
     .copyright =  "LGPL",
-    .status =  RIG_STATUS_ALPHA,
+    .status =  RIG_STATUS_BETA,
     .rig_type =  RIG_TYPE_MOBILE,
     .ptt_type =  RIG_PTT_RIG,
     .dcd_type =  RIG_DCD_RIG,
@@ -88,7 +88,6 @@ const struct rig_caps ic2730_caps =
     .has_get_parm =  IC2730_PARM_ALL,
     .has_set_parm =  IC2730_PARM_ALL,
     .level_gran = {
-        // cppcheck-suppress *
         [LVL_RAWSTR] = { .min = { .i = 0 }, .max = { .i = 255 } },
     },
     .parm_gran =  {},

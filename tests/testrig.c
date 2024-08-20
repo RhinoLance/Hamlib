@@ -11,10 +11,10 @@
 
 #include <hamlib/config.h>
 
-#define SERIAL_PORT "/dev/ttyUSB0"
+#define SERIAL_PORT "/dev/pts/2"
 
 
-int main(int argc, char *argv[])
+int main(int argc, const char *argv[])
 {
     RIG *my_rig;        /* handle to rig (nstance) */
     freq_t freq;        /* frequency  */
@@ -38,9 +38,10 @@ int main(int argc, char *argv[])
      * allocate memory, setup & open port
      */
 
+    hamlib_port_t myport;
+
     if (argc < 2)
     {
-        hamlib_port_t myport;
         /* may be overridden by backend probe */
         myport.type.rig = RIG_PORT_SERIAL;
         myport.parm.serial.rate = 9600;
@@ -48,7 +49,6 @@ int main(int argc, char *argv[])
         myport.parm.serial.stop_bits = 1;
         myport.parm.serial.parity = RIG_PARITY_NONE;
         myport.parm.serial.handshake = RIG_HANDSHAKE_NONE;
-        strncpy(myport.pathname, SERIAL_PORT, HAMLIB_FILPATHLEN - 1);
 
         rig_load_all_backends();
         myrig_model = rig_probe(&myport);
@@ -59,15 +59,16 @@ int main(int argc, char *argv[])
     }
 
     my_rig = rig_init(myrig_model);
+    rig_set_conf(my_rig, rig_token_lookup(my_rig, "rig_pathname"), SERIAL_PORT);
 
     if (!my_rig)
     {
-        fprintf(stderr, "Unknown rig num: %d\n", myrig_model);
+        fprintf(stderr, "Unknown rig num: %u\n", myrig_model);
         fprintf(stderr, "Please check riglist.h\n");
         exit(1); /* whoops! something went wrong (mem alloc?) */
     }
 
-    //strncpy(my_rig->state.rigport.pathname, SERIAL_PORT, HAMLIB_FILPATHLEN - 1);
+    //strncpy(RIGPORT(my_rig)->pathname, SERIAL_PORT, HAMLIB_FILPATHLEN - 1);
 
     retcode = rig_open(my_rig);
 
@@ -77,9 +78,21 @@ int main(int argc, char *argv[])
         exit(2);
     }
 
+    uint64_t levels = rig_get_caps_int(my_rig->caps->rig_model,
+                                       RIG_CAPS_HAS_GET_LEVEL);
+    printf("HAS_GET_LEVEL=0x%8lx, SWR=%8llx,true=%d\n", levels,
+           levels & RIG_LEVEL_SWR, (levels & RIG_LEVEL_SWR) == RIG_LEVEL_SWR);
+
     char val[256];
     retcode = rig_get_conf2(my_rig, rig_token_lookup(my_rig, "write_delay"), val,
                             sizeof(val));
+
+    if (retcode != RIG_OK)
+    {
+        rig_debug(RIG_DEBUG_ERR, "%s: rig_get_conf2: %s\n", __func__,
+                  rigerror(retcode));
+    }
+
     printf("write_delay=%s\n", val);
 
 //    printf("Port %s opened ok\n", SERIAL_PORT);
@@ -418,7 +431,7 @@ int main(int argc, char *argv[])
 
     if (retcode == RIG_OK)
     {
-        printf("rig_get_vfo: vfo = %i \n", vfo);
+        printf("rig_get_vfo: vfo = %u \n", vfo);
     }
     else
     {
@@ -440,7 +453,6 @@ int main(int argc, char *argv[])
 
     if (retcode == RIG_OK)
     {
-        // cppcheck-suppress *
         printf("rig_get_mode: mode = %s\n", rig_strrmode(rmode));
     }
     else

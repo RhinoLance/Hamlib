@@ -51,7 +51,7 @@ static struct icom_priv_caps icr6_priv_caps =
     .ant_count = 2
 };
 
-const struct rig_caps icr6_caps =
+struct rig_caps icr6_caps =
 {
     RIG_MODEL(RIG_MODEL_ICR6),
     .model_name = "IC-R6",
@@ -80,7 +80,6 @@ const struct rig_caps icr6_caps =
     .has_get_parm =  RIG_PARM_NONE,
     .has_set_parm =  RIG_PARM_NONE,
     .level_gran = {
-        // cppcheck-suppress *
         [LVL_RAWSTR] = { .min = { .i = 0 }, .max = { .i = 255 } },
     },
     .parm_gran =  {},

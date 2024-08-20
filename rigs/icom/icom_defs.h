@@ -98,6 +98,7 @@
 #define C_CTL_RIT	0x21		/* RIT/XIT control */
 #define C_CTL_DSD	0x22		/* D-STAR Data */
 #define C_SEND_SEL_FREQ 0x25		/* Send/Recv sel/unsel VFO frequency */
+#define C_SEND_SEL_MODE 0x26		/* Send/Recv sel/unsel VFO mode & filter  */
 #define C_CTL_SCP	0x27		/* Scope control & data */
 #define C_SND_VOICE	0x28		/* Transmit Voice Memory Contents */
 #define C_CTL_MTEXT	0x70		/* Microtelecom Extension */
@@ -160,7 +161,7 @@
 #define S_DUAL	0xc2		/* Dual watch (0 = off, 1 = on) */
 #define S_MAIN	0xd0		/* Select MAIN band */
 #define S_SUB	0xd1		/* Select SUB band */
-#define S_SUB_SEL	0xd2		/* Read/Set Main/Sub selection */
+#define S_BAND_SEL	0xd2		/* Read/Set Main/Sub band selection */
 #define S_FRONTWIN	0xe0		/* Select front window */
 
 /*
@@ -348,6 +349,8 @@
 #define S_FUNC_NXENC   0x63		/* NXDN encryption */
 #define S_FUNC_DCENC   0x64		/* DCR encryption */
 #define S_FUNC_IPP     0x65		/* IP+ setting */
+#define S_FUNC_TX_INHIBIT     0x66		/* TX inhibit setting */
+#define S_FUNC_DPP     0x67		/* DPP setting */
 
 /*
  * Set Power On/Off (C_SET_PWR) subcommands
@@ -359,8 +362,9 @@
 /*
  * Transmit control (C_CTL_PTT) subcommands
  */
-#define S_PTT		0x00
-#define S_ANT_TUN	0x01	/* Auto tuner 0=OFF, 1 = ON, 2=Start Tuning */
+#define S_PTT			0x00
+#define S_ANT_TUN		0x01	/* Auto tuner 0=OFF, 1 = ON, 2=Start Tuning */
+#define S_RD_TX_FREQ	0x03	/* Read transmit frequency */
 
 /*
  * Band Edge control (C_CTL_EDGE) subcommands
@@ -567,6 +571,10 @@
 #define TOK_SCOPE_FEF TOKEN_BACKEND(146)
 #define TOK_SCOPE_RBW TOKEN_BACKEND(147)
 #define TOK_SCOPE_MKP TOKEN_BACKEND(148)
+#define TOK_IPP_FUNC TOKEN_BACKEND(149)
+#define TOK_TX_INHIBIT_FUNC TOKEN_BACKEND(150)
+#define TOK_DPP_FUNC TOKEN_BACKEND(151)
+#define TOK_ICPW2_FUNC TOKEN_BACKEND(152)
 
 /*
  * icom_ext_parm table subcommand modifiers

@@ -49,14 +49,14 @@
  *
  * TODO: BFO
  */
-const struct rig_caps wj8888_caps =
+struct rig_caps wj8888_caps =
 {
     RIG_MODEL(RIG_MODEL_WJ8888),
     .model_name = "WJ-8888",
     .mfg_name =  "Watkins-Johnson",
     .version =  BACKEND_VER ".0",
     .copyright =  "LGPL",
-    .status =  RIG_STATUS_ALPHA,
+    .status =  RIG_STATUS_BETA,
     .rig_type =  RIG_TYPE_RECEIVER,
     .ptt_type =  RIG_PTT_NONE,
     .dcd_type =  RIG_DCD_NONE,
@@ -82,7 +82,6 @@ const struct rig_caps wj8888_caps =
     .preamp =   { RIG_DBLST_END },
     .attenuator =   { RIG_DBLST_END },
     .level_gran = {
-        // cppcheck-suppress *
         [LVL_RAWSTR] = { .min = { .i = 0 }, .max = { .i = 0x7f } },
     },
     .max_rit =  Hz(0),

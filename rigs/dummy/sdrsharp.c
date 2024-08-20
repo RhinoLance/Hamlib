@@ -101,7 +101,6 @@ static int read_transaction(RIG *rig, char *xml, int xml_len)
     int retry;
     char *delims;
     char *terminator = "\n";
-    struct rig_state *rs = &rig->state;
 
     ENTERFUNC;
 
@@ -118,7 +117,7 @@ static int read_transaction(RIG *rig, char *xml, int xml_len)
             rig_debug(RIG_DEBUG_WARN, "%s: retry needed? retry=%d\n", __func__, retry);
         }
 
-        int len = read_string(&rs->rigport, (unsigned char *) tmp_buf, sizeof(tmp_buf),
+        int len = read_string(RIGPORT(rig), (unsigned char *) tmp_buf, sizeof(tmp_buf),
                               delims,
                               strlen(delims), 0, 1);
 
@@ -175,7 +174,7 @@ static int write_transaction(RIG *rig, char *xml, int xml_len)
 
     int retval = -RIG_EPROTO;
 
-    struct rig_state *rs = &rig->state;
+    hamlib_port_t *rp = RIGPORT(rig);
 
     ENTERFUNC;
 
@@ -189,11 +188,11 @@ static int write_transaction(RIG *rig, char *xml, int xml_len)
 
     // appears we can lose sync if we don't clear things out
     // shouldn't be anything for us now anyways
-    rig_flush(&rig->state.rigport);
+    rig_flush(rp);
 
     while (try-- >= 0 && retval != RIG_OK)
         {
-            retval = write_block(&rs->rigport, (unsigned char *) xml, strlen(xml));
+            retval = write_block(rp, (unsigned char *) xml, strlen(xml));
 
             if (retval  < 0)
             {
@@ -245,7 +244,7 @@ static int sdrsharp_transaction(RIG *rig, char *cmd, char *value,
         if (value)
         {
             read_transaction(rig, xml, sizeof(xml));    // this might time out -- that's OK
-            strncpy(value, xml, value_len); 
+            strncpy(value, xml, value_len);
         }
 
     }
@@ -270,19 +269,20 @@ static int sdrsharp_transaction(RIG *rig, char *cmd, char *value,
 static int sdrsharp_init(RIG *rig)
 {
     struct sdrsharp_priv_data *priv;
+    hamlib_port_t *rp = RIGPORT(rig);
 
     ENTERFUNC;
     rig_debug(RIG_DEBUG_TRACE, "%s version %s\n", __func__, rig->caps->version);
 
-    rig->state.priv  = (struct sdrsharp_priv_data *)calloc(1, sizeof(
+    STATE(rig)->priv  = (struct sdrsharp_priv_data *)calloc(1, sizeof(
                            struct sdrsharp_priv_data));
 
-    if (!rig->state.priv)
+    if (!STATE(rig)->priv)
     {
         RETURNFUNC(-RIG_ENOMEM);
     }
 
-    priv = rig->state.priv;
+    priv = STATE(rig)->priv;
 
     memset(priv, 0, sizeof(struct sdrsharp_priv_data));
     memset(priv->parms, 0, RIG_SETTING_MAX * sizeof(value_t));
@@ -290,7 +290,7 @@ static int sdrsharp_init(RIG *rig)
     /*
      * set arbitrary initial status
      */
-    rig->state.current_vfo = RIG_VFO_A;
+    STATE(rig)->current_vfo = RIG_VFO_A;
     priv->split = 0;
     priv->ptt = 0;
     priv->curr_modeA = -1;
@@ -303,20 +303,19 @@ static int sdrsharp_init(RIG *rig)
         RETURNFUNC(-RIG_EINVAL);
     }
 
-    strncpy(rig->state.rigport.pathname, DEFAULTPATH,
-            sizeof(rig->state.rigport.pathname));
+    strncpy(rp->pathname, DEFAULTPATH, sizeof(rp->pathname));
 
     RETURNFUNC(RIG_OK);
 }
 
 /*
 * sdrsharp_get_freq
-* Assumes rig!=NULL, rig->state.priv!=NULL, freq!=NULL
+* Assumes rig!=NULL, STATE(rig)->priv!=NULL, freq!=NULL
 */
 static int sdrsharp_get_freq(RIG *rig, vfo_t vfo, freq_t *freq)
 {
     char value[MAXARGLEN];
-    struct sdrsharp_priv_data *priv = (struct sdrsharp_priv_data *) rig->state.priv;
+    struct sdrsharp_priv_data *priv = (struct sdrsharp_priv_data *) STATE(rig)->priv;
 
     ENTERFUNC;
     rig_debug(RIG_DEBUG_TRACE, "%s: vfo=%s\n", __func__,
@@ -332,7 +331,7 @@ static int sdrsharp_get_freq(RIG *rig, vfo_t vfo, freq_t *freq)
 
     if (vfo == RIG_VFO_CURR)
     {
-        vfo = rig->state.current_vfo;
+        vfo = STATE(rig)->current_vfo;
         rig_debug(RIG_DEBUG_TRACE, "%s: get_freq2 vfo=%s\n",
                   __func__, rig_strvfo(vfo));
     }
@@ -378,7 +377,7 @@ static int sdrsharp_get_freq(RIG *rig, vfo_t vfo, freq_t *freq)
 
 /*
 * sdrsharp_open
-* Assumes rig!=NULL, rig->state.priv!=NULL
+* Assumes rig!=NULL, STATE(rig)->priv!=NULL
 */
 static int sdrsharp_open(RIG *rig)
 {
@@ -398,9 +397,9 @@ static int sdrsharp_open(RIG *rig)
         RETURNFUNC(RIG_EPROTO);
     }
 
-    rig->state.current_vfo = RIG_VFO_A;
+    STATE(rig)->current_vfo = RIG_VFO_A;
     rig_debug(RIG_DEBUG_TRACE, "%s: currvfo=%s value=%s\n", __func__,
-              rig_strvfo(rig->state.current_vfo), value);
+              rig_strvfo(STATE(rig)->current_vfo), value);
 
     RETURNFUNC(retval);
 }
@@ -418,7 +417,7 @@ static int sdrsharp_close(RIG *rig)
 
 /*
 * sdrsharp_cleanup
-* Assumes rig!=NULL, rig->state.priv!=NULL
+* Assumes rig!=NULL, STATE(rig)->priv!=NULL
 */
 static int sdrsharp_cleanup(RIG *rig)
 {
@@ -431,12 +430,12 @@ static int sdrsharp_cleanup(RIG *rig)
         RETURNFUNC2(-RIG_EINVAL);
     }
 
-    priv = (struct sdrsharp_priv_data *)rig->state.priv;
+    priv = (struct sdrsharp_priv_data *)STATE(rig)->priv;
 
     free(priv->ext_parms);
-    free(rig->state.priv);
+    free(STATE(rig)->priv);
 
-    rig->state.priv = NULL;
+    STATE(rig)->priv = NULL;
 
     // we really don't need to free this up as it's only done once
     // was causing problem when cleanup was followed by rig_open
@@ -464,7 +463,7 @@ static int sdrsharp_cleanup(RIG *rig)
 
 /*
 * sdrsharp_set_freq
-* assumes rig!=NULL, rig->state.priv!=NULL
+* assumes rig!=NULL, STATE(rig)->priv!=NULL
 */
 static int sdrsharp_set_freq(RIG *rig, vfo_t vfo, freq_t freq)
 {
@@ -472,7 +471,7 @@ static int sdrsharp_set_freq(RIG *rig, vfo_t vfo, freq_t freq)
     char cmd[MAXARGLEN];
     char value[1024];
 
-    //struct sdrsharp_priv_data *priv = (struct sdrsharp_priv_data *) rig->state.priv;
+    //struct sdrsharp_priv_data *priv = (struct sdrsharp_priv_data *) STATE(rig)->priv;
 
     rig_debug(RIG_DEBUG_TRACE, "%s\n", __func__);
     rig_debug(RIG_DEBUG_TRACE, "%s: vfo=%s freq=%.0f\n", __func__,
@@ -486,10 +485,12 @@ static int sdrsharp_set_freq(RIG *rig, vfo_t vfo, freq_t freq)
     }
 
 #if 0
+
     if (vfo == RIG_VFO_CURR)
     {
-        vfo = rig->state.current_vfo;
+        vfo = STATE(rig)->current_vfo;
     }
+
 #endif
 
     SNPRINTF(cmd, sizeof(cmd), "F %.0lf\n", freq);
@@ -519,7 +520,7 @@ static int sdrsharp_get_vfo(RIG *rig, vfo_t *vfo)
     RETURNFUNC(RIG_OK);
 }
 
-const struct rig_caps sdrsharp_caps =
+struct rig_caps sdrsharp_caps =
 {
     RIG_MODEL(RIG_MODEL_SDRSHARP),
     .model_name = "SDR#/gpredict",

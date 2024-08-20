@@ -128,7 +128,7 @@ int is_uh_radio_fd(int fd)
 
 
 /**
- * \brief Open serial port using rig.state data
+ * \brief Open serial port using STATE(rig) data
  * \param rp port data structure (must spec port id eg /dev/ttyS1)
  * \return RIG_OK or < 0 if error
  */
@@ -227,7 +227,8 @@ int HAMLIB_API serial_open(hamlib_port_t *rp)
 
         if (fd == -1) // some serial ports fail to open 1st time for some unknown reason
         {
-            rig_debug(RIG_DEBUG_WARN, "%s(%d): open failed#%d\n", __func__, __LINE__, i);
+            rig_debug(RIG_DEBUG_WARN, "%s(%d): open failed#%d %s\n", __func__, __LINE__, i,
+                      strerror(errno));
             hl_usleep(500 * 1000);
             fd = OPEN(rp->pathname, O_RDWR | O_NOCTTY | O_NDELAY);
         }
@@ -521,6 +522,7 @@ int HAMLIB_API serial_setup(hamlib_port_t *rp)
      * Set stop bits to requested values.
      *
      */
+    rig_debug(RIG_DEBUG_TRACE, "%s: stopbits=%d\n", __func__, rp->parm.serial.stop_bits);
     switch (rp->parm.serial.stop_bits)
     {
     case 1:
@@ -739,9 +741,10 @@ int HAMLIB_API serial_flush(hamlib_port_t *p)
         rig_debug(RIG_DEBUG_ERR, "%s: No WIN32 index for port???\n", __func__);
         return -1;
     }
+
     PurgeComm(index->hComm, PURGE_RXCLEAR);
     return RIG_OK;
-    
+
 #endif
 
     if (p->fd == uh_ptt_fd || p->fd == uh_radio_fd || p->flushx)
@@ -772,17 +775,17 @@ int HAMLIB_API serial_flush(hamlib_port_t *p)
     }
 
     timeout_save = p->timeout;
-    rig_debug(RIG_DEBUG_ERR, "%s: p->timeout=%d\n", __func__,  p->timeout);
+    //rig_debug(RIG_DEBUG_ERR, "%s: p->timeout=%d\n", __func__,  p->timeout);
     timeout_retry_save = p->timeout_retry;
     p->timeout = 0;
     p->timeout_retry = 0;
-    
+
 
     do
     {
         // we pass an empty stopset so read_string can determine
         // the appropriate stopset for async data
-        char stopset[1];
+        const char stopset[1];
         len = read_string(p, buf, sizeof(buf) - 1, stopset, 0, 1, 1);
 
         if (len > 0)
@@ -817,7 +820,7 @@ int HAMLIB_API serial_flush(hamlib_port_t *p)
 
 //    rig_debug(RIG_DEBUG_VERBOSE, "tcflush%s\n", "");
     // we also do this flush https://github.com/Hamlib/Hamlib/issues/1241
-    tcflush(p->fd,TCIFLUSH);
+    tcflush(p->fd, TCIFLUSH);
 
     return RIG_OK;
 }
@@ -1048,7 +1051,7 @@ int HAMLIB_API ser_set_rts(hamlib_port_t *p, int state)
 
 /**
  * \brief Get RTS bit
- * \param p supposed to be &rig->state.rigport
+ * \param p supposed to be RIGPORT(rig)
  * \param state non-NULL
  */
 int HAMLIB_API ser_get_rts(hamlib_port_t *p, int *state)
@@ -1131,7 +1134,7 @@ int HAMLIB_API ser_set_dtr(hamlib_port_t *p, int state)
 
 /**
  * \brief Get DTR bit
- * \param p supposed to be &rig->state.rigport
+ * \param p supposed to be RIGPORT(rig)
  * \param state non-NULL
  */
 int HAMLIB_API ser_get_dtr(hamlib_port_t *p, int *state)
@@ -1164,7 +1167,7 @@ int HAMLIB_API ser_get_dtr(hamlib_port_t *p, int *state)
  * \param state (ignored?)
  * \return RIG_OK or < 0
  */
-int HAMLIB_API ser_set_brk(hamlib_port_t *p, int state)
+int HAMLIB_API ser_set_brk(const hamlib_port_t *p, int state)
 {
     // ignore this for microHam ports
     if (p->fd == uh_ptt_fd || p->fd == uh_radio_fd)
@@ -1183,7 +1186,7 @@ int HAMLIB_API ser_set_brk(hamlib_port_t *p, int state)
 
 /**
  * \brief Get Carrier (CI?) bit
- * \param p supposed to be &rig->state.rigport
+ * \param p supposed to be RIGPORT(rig)
  * \param state non-NULL
  */
 int HAMLIB_API ser_get_car(hamlib_port_t *p, int *state)
@@ -1206,7 +1209,7 @@ int HAMLIB_API ser_get_car(hamlib_port_t *p, int *state)
 
 /**
  * \brief Get Clear to Send (CTS) bit
- * \param p supposed to be &rig->state.rigport
+ * \param p supposed to be RIGPORT(rig)
  * \param state non-NULL
  */
 int HAMLIB_API ser_get_cts(hamlib_port_t *p, int *state)
@@ -1229,7 +1232,7 @@ int HAMLIB_API ser_get_cts(hamlib_port_t *p, int *state)
 
 /**
  * \brief Get Data Set Ready (DSR) bit
- * \param p supposed to be &rig->state.rigport
+ * \param p supposed to be RIGPORT(rig)
  * \param state non-NULL
  */
 int HAMLIB_API ser_get_dsr(hamlib_port_t *p, int *state)

@@ -116,9 +116,16 @@ static const struct icom_priv_caps IC7200_priv_caps =
         { .level = RIG_AGC_SLOW, .icom_level = 2 },
         { .level = RIG_AGC_LAST, .icom_level = -1 },
     },
+    .x25x26_always = 0,
+    .x25x26_possibly = 0,
+    .x1cx03_always = 0,
+    .x1cx03_possibly = 0,
+    .x1ax03_supported = 1,
+    .mode_with_filter = 1,
+    .data_mode_supported = 1
 };
 
-const struct rig_caps ic7200_caps =
+struct rig_caps ic7200_caps =
 {
     RIG_MODEL(RIG_MODEL_IC7200),
     .model_name = "IC-7200",
@@ -149,9 +156,6 @@ const struct rig_caps ic7200_caps =
     .level_gran =
     {
 #include "level_gran_icom.h"
-        // cppcheck-suppress *
-        [LVL_RAWSTR] = { .min = { .i = 0 }, .max = { .i = 255 } },
-        [LVL_VOXDELAY] = { .min = { .i = 0 }, .max = { .i = 20 }, .step = { .i = 1 } },
         [LVL_KEYSPD] = { .min = { .i = 6 }, .max = { .i = 48 }, .step = { .i = 1 } },
         [LVL_CWPITCH] = { .min = { .i = 300 }, .max = { .i = 900 }, .step = { .i = 1 } },
     },
@@ -247,8 +251,8 @@ const struct rig_caps ic7200_caps =
 
     .set_freq =  icom_set_freq,
     .get_freq =  icom_get_freq,
-    .set_mode =  icom_set_mode_with_data,
-    .get_mode =  icom_get_mode_with_data,
+    .set_mode =  icom_set_mode,
+    .get_mode =  icom_get_mode,
     .set_vfo =  icom_set_vfo,
 //    .get_vfo =  icom_get_vfo,
     .set_ant =  NULL,  /*automatically set by rig depending band */

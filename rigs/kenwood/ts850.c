@@ -62,6 +62,7 @@
 static struct kenwood_priv_caps  ts850_priv_caps  =
 {
     .cmdtrm =  EOM_KEN,
+    .tone_table_base = 1,
 };
 
 /* forward definitions */
@@ -94,9 +95,8 @@ static const struct confparams ts850_ext_parms[] =
 /*
 * ts850 rig capabilities.
 * Notice that some rigs share the same functions.
-* Also this struct is READONLY!
 */
-const struct rig_caps ts850_caps =
+struct rig_caps ts850_caps =
 {
     RIG_MODEL(RIG_MODEL_TS850),
     .model_name = "TS-850",

@@ -1623,6 +1623,7 @@ int set_conf(AMP *my_amp, char *conf_parms)
         if (token != 0)
         {
             ret = amp_set_conf(my_amp, token, q);
+
             if (ret != RIG_OK)
             {
                 return ret;
@@ -1630,7 +1631,7 @@ int set_conf(AMP *my_amp, char *conf_parms)
         }
         else
         {
-            rig_debug(RIG_DEBUG_WARN, "%s: invalid token %s for this rig\n", __func__, p);
+            rig_debug(RIG_DEBUG_WARN, "%s: invalid token %s for this amp\n", __func__, p);
         }
 
         p = n;
@@ -1696,7 +1697,7 @@ declare_proto_amp(set_level)
     if (!strcmp(arg1, "?"))
     {
         char s[SPRINTF_MAX_SIZE];
-        rig_sprintf_level(s, sizeof(s), amp->state.has_set_level);
+        rig_sprintf_level(s, sizeof(s), AMPSTATE(amp)->has_set_level);
         fputs(s, fout);
 
         if (amp->caps->set_ext_level)
@@ -1776,7 +1777,7 @@ declare_proto_amp(get_level)
     if (!strcmp(arg1, "?"))
     {
         char s[SPRINTF_MAX_SIZE];
-        amp_sprintf_level(s, sizeof(s), amp->state.has_get_level);
+        amp_sprintf_level(s, sizeof(s), AMPSTATE(amp)->has_get_level);
 
         fputs(s, fout);
 
@@ -1989,7 +1990,7 @@ declare_proto_amp(get_powerstat)
 declare_proto_amp(send_cmd)
 {
     int retval;
-    struct amp_state *rs;
+    hamlib_port_t *ampp = AMPPORT(amp);
     int backend_num, cmd_len;
 #define BUFSZ 128
     unsigned char bufcmd[BUFSZ];
@@ -2037,11 +2038,9 @@ declare_proto_amp(send_cmd)
         eom_buf[2] = send_cmd_term;
     }
 
-    rs = &amp->state;
+    rig_flush(ampp);
 
-    rig_flush(&rs->ampport);
-
-    retval = write_block(&rs->ampport, bufcmd, cmd_len);
+    retval = write_block(ampp, bufcmd, cmd_len);
 
     if (retval != RIG_OK)
     {
@@ -2059,7 +2058,7 @@ declare_proto_amp(send_cmd)
          * assumes CR or LF is end of line char
          * for all ascii protocols
          */
-        retval = read_string(&rs->ampport, buf, BUFSZ, eom_buf, strlen(eom_buf), 0, 1);
+        retval = read_string(ampp, buf, BUFSZ, eom_buf, strlen(eom_buf), 0, 1);
 
         if (retval < 0)
         {

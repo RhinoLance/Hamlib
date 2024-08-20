@@ -6,10 +6,12 @@
 // gcc -static -I../include -g -Wall -o simicom simicom.c -L../../build/src/.libs -lhamlib -lwsock32 -lws2_32
 #define _XOPEN_SOURCE 700
 // since we are POSIX here we need this
+#if 0
 struct ip_mreq
 {
     int dummy;
 };
+#endif
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -35,8 +37,8 @@ int keyspd = 85; // 85=20WPM
 // we make B different from A to ensure we see a difference at startup
 float freqA = 14074000;
 float freqB = 14074500;
-mode_t modeA = RIG_MODE_PKTUSB;
-mode_t modeB = RIG_MODE_PKTUSB;
+mode_t modeA = RIG_MODE_FM;
+mode_t modeB = RIG_MODE_FM;
 int datamodeA = 0;
 int datamodeB = 0;
 pbwidth_t widthA = 0;
@@ -49,7 +51,7 @@ int agc_time = 1;
 int ovf_status = 0;
 int powerstat = 1;
 
-void dumphex(unsigned char *buf, int n)
+void dumphex(const unsigned char *buf, int n)
 {
     for (int i = 0; i < n; ++i) { printf("%02x ", buf[i]); }
 
@@ -92,7 +94,7 @@ again:
         }
     }
 
-    printf("Error??? c=x%02x\n", c);
+    printf("Error %s\n", strerror(errno));
 
     return 0;
 }
@@ -102,6 +104,13 @@ void frameParse(int fd, unsigned char *frame, int len)
     double freq;
     int n = 0;
 
+    if (len == 0)
+    {
+        printf("%s: len==0\n", __func__);
+        return;
+    }
+
+printf("Here#1\n");
     dumphex(frame, len);
 
     if (frame[0] != 0xfe && frame[1] != 0xfe)
@@ -445,7 +454,7 @@ void frameParse(int fd, unsigned char *frame, int len)
             }
 
             frame[11] = 0xfd;
-#if 1
+#if 0
             unsigned char frame2[11];
 
             frame2[0] = 0xfe;
@@ -460,8 +469,9 @@ void frameParse(int fd, unsigned char *frame, int len)
             frame2[9] = 0x00;
             frame2[10] = 0xfd;
             n = write(fd, frame2, 11);
-#endif
+#else
             n = write(fd, frame, 12);
+#endif
         }
         else
         {
@@ -500,7 +510,7 @@ void frameParse(int fd, unsigned char *frame, int len)
 
             frame[6] = frame[5] == 0 ? modeA : modeB;
             frame[7] = frame[5] == 0 ? datamodeA : datamodeB;
-            frame[8] = 0xfb;
+            frame[8] = 0x01;
             frame[9] = 0xfd;
             n = write(fd, frame, 10);
         }

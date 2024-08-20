@@ -130,7 +130,7 @@ int ftdx10_ext_tokens[] =
     TOK_BACKEND_NONE
 };
 
-const struct rig_caps ftdx10_caps =
+struct rig_caps ftdx10_caps =
 {
     RIG_MODEL(RIG_MODEL_FTDX10),
     .model_name =         "FTDX-10",
@@ -147,7 +147,7 @@ const struct rig_caps ftdx10_caps =
     .serial_data_bits =   8,
     .serial_stop_bits =   2,
     .serial_parity =      RIG_PARITY_NONE,
-    .serial_handshake =   RIG_HANDSHAKE_NONE,
+    .serial_handshake =   RIG_HANDSHAKE_HARDWARE,
     .write_delay =        FTDX10_WRITE_DELAY,
     .post_write_delay =   FTDX10_POST_WRITE_DELAY,
     .timeout =            2000,
@@ -161,14 +161,14 @@ const struct rig_caps ftdx10_caps =
     .level_gran =
     {
 #include "level_gran_yaesu.h"
-        [LVL_MICGAIN] = { .min = { .f = 0 }, .max = { .f = 1.0 }, .step = { .f = 1.0f/100.0f } },
-        [LVL_SQL] = { .min = { .f = 0 }, .max = { .f = 1.0 }, .step = { .f = 1.0f/100.0f } },
-        [LVL_MONITOR_GAIN] = { .min = { .f = 0 }, .max = { .f = 1.0 }, .step = { .f = 1.0f/100.0f } },
-        [LVL_RFPOWER] = { .min = { .f = .05 }, .max = { .f = 1.0 }, .step = { .f = 1.0f/100.0f } },
+        [LVL_MICGAIN] = { .min = { .f = 0 }, .max = { .f = 1.0 }, .step = { .f = 1.0f / 100.0f } },
+        [LVL_SQL] = { .min = { .f = 0 }, .max = { .f = 1.0 }, .step = { .f = 1.0f / 100.0f } },
+        [LVL_MONITOR_GAIN] = { .min = { .f = 0 }, .max = { .f = 1.0 }, .step = { .f = 1.0f / 100.0f } },
+        [LVL_RFPOWER] = { .min = { .f = .05 }, .max = { .f = 1.0 }, .step = { .f = 1.0f / 100.0f } },
     },
     .parm_gran =  {
         [PARM_BANDSELECT] = {.min = {.f = 0.0f}, .max = {.f = 1.0f}, .step = {.s = "BAND160M,BAND80M,BANDUNUSED,BAND40M,BAND30M,BAND20M,BAND17M,BAND15M,BAND12M,BAND10M,BAND6M,BANDGEN,BANDMW"}}
-        },
+    },
 
     .ctcss_list =         common_ctcss_list,
     .dcs_list =           NULL,
@@ -190,6 +190,7 @@ const struct rig_caps ftdx10_caps =
     .chan_list =          {
         {   1,  99, RIG_MTYPE_MEM,  NEWCAT_MEM_CAP },
         { 501, 510, RIG_MTYPE_BAND, NEWCAT_MEM_CAP },    /* 60M Channels, 5-01 - 5-10, if available */
+        {   1,	5,  RIG_MTYPE_MORSE },
         RIG_CHAN_END,
     },
 

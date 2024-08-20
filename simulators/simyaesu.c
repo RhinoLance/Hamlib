@@ -2,10 +2,12 @@
 // gcc -o simyaesu simyaesu.c
 #define _XOPEN_SOURCE 700
 // since we are POSIX here we need this
+#if 0
 struct ip_mreq
-  {
+{
     int dummy;
-  };
+};
+#endif
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -67,6 +69,8 @@ getmyline(int fd, char *buf)
 
         if (c == ';') { return strlen(buf); }
     }
+
+    if (strlen(buf) == 0) { hl_usleep(10 * 1000); }
 
     return strlen(buf);
 }
@@ -275,7 +279,7 @@ int main(int argc, char *argv[])
             hl_usleep(50 * 1000);
             pbuf = "VS0;";
 
-            if (curr_vfo == RIG_VFO_B || curr_vfo == RIG_VFO_SUB) { pbuf[2] = '1'; }
+            if (curr_vfo == RIG_VFO_B || curr_vfo == RIG_VFO_SUB) { pbuf = "VS1"; }
 
             n = write(fd, pbuf, strlen(pbuf));
             printf("%s\n", pbuf);
@@ -415,7 +419,7 @@ int main(int argc, char *argv[])
             SNPRINTF(buf, sizeof(buf), "EX039%d;", ex039);
             n = write(fd, buf, strlen(buf));
         }
-        else if (strncmp(buf, "EX039", 3) == 0)
+        else if (strncmp(buf, "EX039", 5) == 0)
         {
             sscanf(buf, "EX039%d", &ex039);
         }

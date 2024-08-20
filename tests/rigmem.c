@@ -29,6 +29,7 @@
 #include <getopt.h>
 
 #include <hamlib/rig.h>
+#include <hamlib/config.h>
 #include "riglist.h"
 
 #define MAXNAMSIZ 32
@@ -209,6 +210,7 @@ int main(int argc, char *argv[])
 #ifdef HAVE_XML2
 
         case 'x':
+            printf("xml\n");
             xml++;
             break;
 #endif
@@ -218,6 +220,7 @@ int main(int argc, char *argv[])
             break;
 
         default:
+            fprintf(stderr, "Unknown option '%c'\n", c);
             usage();    /* unknown option? */
             exit(1);
         }
@@ -280,13 +283,13 @@ int main(int argc, char *argv[])
 
     if (rig_file)
     {
-        strncpy(rig->state.rigport.pathname, rig_file, HAMLIB_FILPATHLEN - 1);
+        strncpy(RIGPORT(rig)->pathname, rig_file, HAMLIB_FILPATHLEN - 1);
     }
 
     /* FIXME: bound checking and port type == serial */
     if (serial_rate != 0)
     {
-        rig->state.rigport.parm.serial.rate = serial_rate;
+        RIGPORT(rig)->parm.serial.rate = serial_rate;
     }
 
     if (civaddr)
@@ -486,6 +489,7 @@ int clear_chans(RIG *rig, const char *infilename)
 {
     int i, j, ret;
     channel_t chan;
+    struct rig_state *rs = STATE(rig);
 
     memset(&chan, 0, sizeof(chan));
     chan.freq = RIG_FREQ_NONE;
@@ -494,10 +498,10 @@ int clear_chans(RIG *rig, const char *infilename)
     chan.tx_mode = RIG_MODE_NONE;
     chan.vfo = RIG_VFO_MEM;
 
-    for (i = 0; rig->state.chan_list[i].type; i++)
+    for (i = 0; rs->chan_list[i].type; i++)
     {
-        for (j = rig->state.chan_list[i].startc;
-                j <= rig->state.chan_list[i].endc; j++)
+        for (j = rs->chan_list[i].startc;
+                j <= rs->chan_list[i].endc; j++)
         {
 
             chan.channel_num = j;

@@ -50,19 +50,17 @@
 
 /*
  * rs_transaction
- * We assume that rig!=NULL, rig->state!= NULL, data!=NULL, data_len!=NULL
+ * We assume that rig!=NULL, STATE(rig)!= NULL, data!=NULL, data_len!=NULL
  */
 int rs_transaction(RIG *rig, const char *cmd, int cmd_len, char *data,
                    int *data_len)
 {
     int retval;
-    struct rig_state *rs;
+    hamlib_port_t *rp = RIGPORT(rig);
 
-    rs = &rig->state;
+    rig_flush(rp);
 
-    rig_flush(&rs->rigport);
-
-    retval = write_block(&rs->rigport, (unsigned char *) cmd, cmd_len);
+    retval = write_block(rp, (unsigned char *) cmd, cmd_len);
 
     if (retval != RIG_OK)
     {
@@ -76,7 +74,7 @@ int rs_transaction(RIG *rig, const char *cmd, int cmd_len, char *data,
         return RIG_OK;
     }
 
-    retval = read_string(&rs->rigport, (unsigned char *) data, BUFSZ, CR, 1, 0, 1);
+    retval = read_string(rp, (unsigned char *) data, BUFSZ, CR, 1, 0, 1);
 
     if (retval < 0)
     {
@@ -97,7 +95,6 @@ int rs_set_freq(RIG *rig, vfo_t vfo, freq_t freq)
     char freqbuf[32];
     int retval;
 
-    // cppcheck-suppress *
     SNPRINTF(freqbuf, sizeof(freqbuf), BOM "FREQ %"PRIll EOM, (int64_t)freq);
     retval = rs_transaction(rig, freqbuf, strlen(freqbuf), NULL, NULL);
 
@@ -337,7 +334,7 @@ int rs_get_level(RIG *rig, vfo_t vfo, setting_t level, value_t *val)
 
     case RIG_LEVEL_ATT:
         val->i = (!memcmp(buf, "ON", 2)
-                  || !memcmp(buf, "1", 1)) ? rig->state.attenuator[0] : 0;
+                  || !memcmp(buf, "1", 1)) ? STATE(rig)->attenuator[0] : 0;
         break;
 
     case RIG_LEVEL_AF:
